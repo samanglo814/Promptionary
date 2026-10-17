@@ -1,0 +1,23 @@
+/* Loads Tailwind. Keep this line at the top. */
+
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #1a1423;
+  --color-paper: #fff8ef;
+  --color-pop: #ff4d6d;
+  --color-zap: #ffd23f;
+  --color-cool: #3ec1d3;
+  --radius-card: 1.25rem;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+/* Players bounce in when they join */
+@keyframes pop {
+  from { transform: scale(0.6); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
