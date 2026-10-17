@@ -15,6 +15,8 @@ Then point the web app at it: set `NEXT_PUBLIC_SERVER_URL=http://localhost:4000`
 
 Testing with phones? Set `PUBLIC_URL` in `server/.env` to the same address as `NEXT_PUBLIC_SERVER_URL` (e.g. `http://192.168.1.20:4000`), or the describer's phone can't load the target image.
 
+Phone browsers only allow the mic on `https://` pages, so for voice on phones run `./dev-tunnel.sh` from the repo root instead (needs `brew install cloudflared`). It starts both apps behind free Cloudflare tunnels and prints an `https://` host address; phones can join from any network. Your `.env` files aren't changed.
+
 ## Check it
 
 | Command | What it does |
