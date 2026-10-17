@@ -4,9 +4,9 @@
 
 import { useState } from "react";
 import { type SubmitResult, type Target } from "@/lib/mocks";
-import { submitAudio, submitText } from "@/lib/submit";
+import { SubmitError, submitAudio, submitText } from "@/lib/submit";
 import { useMsLeft, useSecondsLeft } from "@/lib/useSecondsLeft";
-import { Button, Label, Meter, TextButton } from "@/components/ui";
+import { Label, Meter, TextButton } from "@/components/ui";
 import MicRecorder from "./MicRecorder";
 
 // How long a turn is (server config describeMs), for the speed bonus meter.
@@ -23,28 +23,13 @@ type Props = {
   onSubmitted: (result: SubmitResult) => void; // called when /submit answers
 };
 
-// How the player is describing: talking (default) or typing (fallback).
-type Mode = "voice" | "type";
-
-// Longest typed description allowed. About what you could say in 20 seconds.
-const MAX_CHARS = 200;
-// Spoken descriptions run longer than typed ones; the server takes up to 500 characters.
+// Spoken descriptions run long; the server takes up to 500 characters.
 const MAX_SPOKEN_CHARS = 500;
 
-// Finds which banned words appear in what the player typed.
-// \b means "word boundary", so "dog" matches "a dog" but not "dogma".
-// The "i" flag ignores upper/lower case.
-// Special characters are escaped so a banned word like "c++" can't break the pattern.
-function bannedWordsIn(text: string, banned: string[]) {
-  return banned.filter((word) => {
-    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\b${escaped}\\b`, "i").test(text);
-  });
-}
-
 // The phone screen for the player whose turn it is.
-// Shows the secret image and banned words, takes their description (voice or typed),
-// and sends it to /submit.
+// Shows the secret image and banned words, and sends their spoken description to /submit:
+// as text when the phone turned the speech into text itself, otherwise as a recording.
+// Voice only: the other players guess from hearing it out loud, so there's no typing.
 export default function DescribeScreen({ myName, target, roomCode, playerId, endsAt, onSubmitted }: Props) {
   // Seconds left in the turn. The round clock starts when the turn starts, not when the
   // player taps the mic, so the recording must stop by then too. null with mocks.
@@ -52,32 +37,32 @@ export default function DescribeScreen({ myName, target, roomCode, playerId, end
   // The speed bonus drains with the clock: finish early, keep more of it.
   const msLeft = useMsLeft(endsAt);
   const speedBonus = msLeft === null ? SPEED_POINTS : Math.round((SPEED_POINTS * msLeft) / DESCRIBE_MS);
-  const [mode, setMode] = useState<Mode>("voice");
-  // What they've typed so far (typing mode only).
-  const [text, setText] = useState("");
   // true while we're waiting for /submit to answer.
   const [sending, setSending] = useState(false);
   // Error message if sending failed.
   const [error, setError] = useState("");
+  // false once the server says this turn can't be described any more (e.g. the AI is out of requests).
+  const [canRetry, setCanRetry] = useState(true);
   // Changing a component's `key` makes React throw it away and build a fresh one.
   // We bump this to reset MicRecorder back to "Tap to talk" after an error.
   const [attempt, setAttempt] = useState(0);
+  // The last description, kept so a failed send can be sent again without saying it all again.
+  const [lastSend, setLastSend] = useState<(() => Promise<SubmitResult>) | null>(null);
 
-  // Banned words in the typed text, checked on every keystroke.
-  // This is only a warning: the server still does the real check and the buzz.
-  const typedBanned = bannedWordsIn(text, target.bannedWords);
-
-  // Shared by voice and typing: show "Sending…", wait for the result, handle errors.
-  // `submit` is whichever send function fits (audio or text).
+  // Show "The AI is drawing…", wait for the result, handle errors.
+  // `submit` is whichever send function fits (the recording, or the words the phone heard).
   async function sendDescription(submit: () => Promise<SubmitResult>) {
+    setLastSend(() => submit);
     setSending(true);
     setError("");
     try {
       onSubmitted(await submit());
-    } catch {
-      // Network problem or server error: let them try again.
+    } catch (err) {
+      // Show the server's reason (e.g. "Time's up."), or a generic line for network problems.
       setSending(false);
-      setError("Couldn't send that. Try again!");
+      setError(err instanceof SubmitError ? err.message : "Couldn't send that. Check your connection and try again!");
+      // 503: the AI gave up and the turn is over; 403: time's up or not your turn.
+      if (err instanceof SubmitError && (err.status === 503 || err.status === 403)) setCanRetry(false);
     }
   }
 
@@ -103,18 +88,12 @@ export default function DescribeScreen({ myName, target, roomCode, playerId, end
         className="aspect-[4/3] w-full rounded-inner border-2 border-action bg-raised object-cover"
       />
 
-      {/* Banned words. Saying one gets you buzzed (the server checks the transcript).
-          In typing mode, a word you've typed turns solid pink as a warning. */}
+      {/* Banned words. Saying one gets you buzzed (the server checks the transcript). */}
       <div className="flex flex-col gap-2">
         <Label tone="ai">Don&apos;t say · −100 each</Label>
         <div className="flex flex-wrap gap-2">
           {target.bannedWords.map((word) => (
-            <span
-              key={word}
-              className={`rounded-full border px-3 py-1 text-sm font-bold line-through ${
-                typedBanned.includes(word) ? "border-ai bg-ai text-stage" : "border-ai/60 bg-raised text-ai"
-              }`}
-            >
+            <span key={word} className="rounded-full border border-ai/60 bg-raised px-3 py-1 text-sm font-bold text-ai line-through">
               {word}
             </span>
           ))}
@@ -132,13 +111,15 @@ export default function DescribeScreen({ myName, target, roomCode, playerId, end
       )}
 
       {sending ? (
-        // While /submit is working.
-        <p className="mt-4 text-center font-display text-3xl animate-pulse">Sending to the AI…</p>
-      ) : mode === "voice" ? (
-        // ---------- Voice (default) ----------
-        <>
-          {/* The timer lives inside MicRecorder: it counts down while recording
-              and stops on its own at 0. `key` lets us reset it after an error. */}
+        // While /submit is working. It answers with the reveal, so point them at the big screen.
+        <div className="mt-4 flex flex-col items-center gap-2 text-center">
+          <p className="font-display text-3xl animate-pulse">The AI is drawing… 🎨</p>
+          <p className="text-muted">Look at the big screen!</p>
+        </div>
+      ) : (
+        // The timer lives inside MicRecorder: it counts down while recording
+        // and stops on its own at 0. `key` lets us reset it after an error.
+        canRetry && (
           <div className="mt-1">
             <MicRecorder
               key={attempt}
@@ -147,66 +128,26 @@ export default function DescribeScreen({ myName, target, roomCode, playerId, end
               onTranscript={(words) => sendDescription(() => submitText(words.slice(0, MAX_SPOKEN_CHARS), roomCode, playerId))}
             />
           </div>
-
-          {/* The escape hatch: always visible, so a broken mic never blocks the round */}
-          <TextButton onClick={() => setMode("type")}>Mic not working? Type it instead</TextButton>
-        </>
-      ) : (
-        // ---------- Typing (fallback) ----------
-        <form
-          // onSubmit fires on the Send button and on the keyboard's Go/Enter key
-          onSubmit={(e) => {
-            e.preventDefault(); // stop the browser from reloading the page
-            const description = text.trim();
-            if (description) sendDescription(() => submitText(description, roomCode, playerId));
-          }}
-          className="flex flex-col gap-3"
-        >
-          <label className="flex flex-col gap-2 rounded-panel border-[1.5px] border-action bg-panel p-4 focus-within:border-action-edge">
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              maxLength={MAX_CHARS}
-              rows={3}
-              autoFocus // keyboard pops up right away when switching to typing
-              placeholder="Describe it without the banned words…"
-              className="resize-none bg-transparent text-lg text-text outline-none placeholder:text-dim"
-            />
-            {/* Banned-word warning (left) and characters left (right) */}
-            <div className="flex justify-between text-xs">
-              <span className="font-bold text-ai">
-                {typedBanned.length > 0 && `“${typedBanned[0]}” will get you buzzed`}
-              </span>
-              <span className="tabular-nums text-muted">{MAX_CHARS - text.length}</span>
-            </div>
-          </label>
-
-          <Button type="submit" disabled={!text.trim()}>
-            Done. Send it →
-          </Button>
-
-          {/* type="button" so this doesn't submit the form */}
-          <TextButton type="button" onClick={() => setMode("voice")}>
-            Use the mic instead
-          </TextButton>
-        </form>
+        )
       )}
 
-      {/* Shown if sending failed, in either mode */}
+      {/* Shown if sending failed */}
       {error && !sending && (
         <div className="flex flex-col items-center gap-2">
-          <p className="font-bold text-ai">{error}</p>
-          {/* In voice mode, reset the recorder so they can record again.
-              In typing mode their text is still there; they just tap Send again. */}
-          {mode === "voice" && (
-            <TextButton
-              onClick={() => {
-                setError("");
-                setAttempt((n) => n + 1); // fresh MicRecorder
-              }}
-            >
-              Record again
-            </TextButton>
+          <p className="text-center font-bold text-ai">{error}</p>
+          {/* Send the same description again, or reset the recorder to say it again. */}
+          {canRetry && (
+            <div className="flex gap-6">
+              {lastSend && <TextButton onClick={() => sendDescription(lastSend)}>Send again</TextButton>}
+              <TextButton
+                onClick={() => {
+                  setError("");
+                  setAttempt((n) => n + 1); // fresh MicRecorder
+                }}
+              >
+                Record again
+              </TextButton>
+            </div>
           )}
         </div>
       )}

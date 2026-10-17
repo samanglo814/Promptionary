@@ -75,11 +75,11 @@ flowchart LR
 
 ### AI pipeline (per round)
 
-1. **Audio in:** the player's recording goes to Gemini for transcript and delivery.
+1. **Audio in:** the player's recording (WAV) goes to Gemini for the transcript.
 2. **Banned-word check:** string match on the transcript.
 3. **Image generation:** the transcript is passed nearly verbatim so the mistakes stay authentic.
-4. **Scoring:** a Gemini vision call compares the original and generated images and returns structured JSON (`score`, `got_right`, `got_wrong`).
-5. **Caption:** a short, playful roast based on the transcript and score.
+4. **Scoring:** once guessing closes, one Gemini vision call compares the original and generated images, writes a short playful roast, and scores everyone's guesses, as structured JSON. One call instead of two saves the free tier's daily requests.
+5. **Fallbacks:** if Gemini is down or out of free requests, the game keeps going: the words are scored instead of the drawing, and a turn that can't be heard at all ends with no points lost.
 6. **Storybook:** at game end, all rounds are turned into titled chapters with narration.
 
 If an image is blocked by safety filters, the game shows a **refusal card** instead of an error, because "the AI refused to draw that" is also funny.
@@ -125,7 +125,9 @@ CLIENT_ORIGIN=http://localhost:3000
 PUBLIC_URL=
 GEMINI_API_KEY=
 GEMINI_TEXT_MODEL=
+GEMINI_TRANSCRIBE_MODEL=
 GEMINI_IMAGE_MODEL=
+IMAGE_PROVIDER=pollinations
 DATABASE_URL=
 AUTH0_DOMAIN=
 AUTH0_AUDIENCE=

@@ -13,6 +13,8 @@ function randomCode(): string {
 // Every live room, in memory. Rooms vanish when the host disconnects or the server restarts.
 export class RoomStore {
   private rooms = new Map<string, Room>();
+  // Rooms whose host's connection dropped: closed unless the host reconnects in time.
+  private closing = new Map<string, NodeJS.Timeout>();
 
   constructor(private deps: RoomDeps) {}
 
@@ -31,7 +33,18 @@ export class RoomStore {
   }
 
   close(code: string) {
+    this.hostBack(code);
     this.rooms.get(code)?.close();
     this.rooms.delete(code);
+  }
+
+  hostLeft(code: string) {
+    if (this.closing.has(code)) return;
+    this.closing.set(code, setTimeout(() => this.close(code), this.deps.config.hostGraceMs));
+  }
+
+  hostBack(code: string) {
+    clearTimeout(this.closing.get(code));
+    this.closing.delete(code);
   }
 }

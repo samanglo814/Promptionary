@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import type { Ai } from "../src/ai/index.js";
+import { AiOutOfQuotaError, type Ai } from "../src/ai/index.js";
 import { createFakeAi } from "../src/ai/fake.js";
-import { Client, fastConfig, startTestServer, submit } from "../scripts/lib.js";
+import { Client, fakeAudio, fastConfig, startTestServer, submit } from "../scripts/lib.js";
 import { playGame } from "../scripts/playGame.js";
 
 // Opens a room with a host and the given players, all joined.
@@ -144,62 +144,130 @@ describe("game server", () => {
     await slow.close();
   });
 
-  test("if the AI fails, the describer gets a 502 and can try again", async () => {
-    let failNext = true;
+  test("if transcribing fails, the describer gets a 502 and extra time; a second failure ends the turn", async () => {
+    let failures = 1;
     const fake = createFakeAi(0);
     const flaky: Ai = {
       ...fake,
-      draw: async (transcript, target) => {
-        if (failNext) {
-          failNext = false;
-          throw new Error("Gemini is down");
-        }
-        return fake.draw(transcript, target);
+      transcribe: async (description) => {
+        if (failures-- > 0) throw new Error("Gemini is down");
+        return fake.transcribe(description);
       },
     };
-    const flakyServer = await startTestServer({ ai: flaky });
+    const flakyServer = await startTestServer({ ai: flaky, config: { ...fastConfig, retryMs: 5_000 } });
     const { host, code, players, closeAll } = await setUp(flakyServer.url, ["Sam", "Ana"]);
     host.socket.emit("start_game");
-    await players[0]!.client.waitFor("your_turn");
+    const { endsAt } = await players[0]!.client.waitFor("your_turn");
+    const send = () => submit(flakyServer.url, { roomCode: code, playerId: players[0]!.id, audio: fakeAudio() });
 
     const originalError = console.error;
-    console.error = () => {}; // the server logs the failure; keep test output clean
-    const first = await submit(flakyServer.url, { roomCode: code, playerId: players[0]!.id, text: "a dog" });
+    console.error = () => {}; // the server logs the failures; keep test output clean
+    assert.equal((await send()).status, 502);
     console.error = originalError;
-    assert.equal(first.status, 502);
-
-    const retry = await submit(flakyServer.url, { roomCode: code, playerId: players[0]!.id, text: "a dog" });
-    assert.equal(retry.status, 200);
+    assert.ok(players[0]!.client.all("your_turn").at(-1)!.endsAt > endsAt, "the failure buys more time");
+    assert.equal((await send()).status, 200, "and the retry works");
     await host.waitFor("round_result");
+
+    // Next turn: Ana's transcription fails twice, and the turn moves on instead of looping.
+    failures = 2;
+    await players[1]!.client.waitFor("your_turn");
+    console.error = () => {};
+    const tries = [];
+    for (let i = 0; i < 2; i++) tries.push((await submit(flakyServer.url, { roomCode: code, playerId: players[1]!.id, audio: fakeAudio() })).status);
+    console.error = originalError;
+    assert.deepEqual(tries, [502, 503]);
+    const { result, breakdown } = await host.waitFor("round_result", (r) => r.playerName === "Ana");
+    assert.equal(breakdown.total, 0);
+    assert.match(result.caption, /out of juice/);
     closeAll();
     await flakyServer.close();
   });
 
-  test("if the AI keeps failing (e.g. out of quota), the turn moves on instead of looping", async () => {
+  test("when the AI is out of quota, the turn ends right away and guesses still score", async () => {
     const fake = createFakeAi(0);
-    const broken: Ai = {
+    const outOfQuota = () => Promise.reject(new AiOutOfQuotaError("text-model", Date.now() + 60_000));
+    const broke: Ai = {
       ...fake,
-      draw: async () => {
-        throw new Error("Quota exceeded");
-      },
+      transcribe: async (description) => (description.kind === "audio" ? outOfQuota() : fake.transcribe(description)),
+      draw: outOfQuota,
+      judge: outOfQuota,
     };
-    const brokenServer = await startTestServer({ ai: broken });
-    const { host, code, players, closeAll } = await setUp(brokenServer.url, ["Sam", "Ana"]);
+    const brokeServer = await startTestServer({ ai: broke });
+    const { host, code, players, closeAll } = await setUp(brokeServer.url, ["Sam", "Ana"]);
     host.socket.emit("start_game");
-    await players[0]!.client.waitFor("your_turn");
+    const { target } = await players[0]!.client.waitFor("your_turn");
+    players[1]!.client.socket.emit("guess", { text: target.id.replace(/-/g, " ") });
+    await players[1]!.client.waitFor("guess_locked");
 
     const originalError = console.error;
-    console.error = () => {}; // the server logs each failure; keep test output clean
-    const first = await submit(brokenServer.url, { roomCode: code, playerId: players[0]!.id, text: "a dog" });
-    const second = await submit(brokenServer.url, { roomCode: code, playerId: players[0]!.id, text: "a dog" });
+    console.error = () => {};
+    const started = Date.now();
+    const voice = await submit(brokeServer.url, { roomCode: code, playerId: players[0]!.id, audio: fakeAudio() });
+    assert.equal(voice.status, 503);
+    assert.match((voice.body as { error: string }).error, /out of free requests/);
+    const turn = await host.waitFor("round_result");
     console.error = originalError;
-    assert.deepEqual([first.status, second.status], [502, 502]);
-
-    const { result } = await host.waitFor("round_result");
-    assert.equal(result.score, 0);
-    assert.match(result.caption, /out of juice/);
+    assert.ok(Date.now() - started < 1_000, "no waiting for the turn's timer");
+    assert.equal(turn.breakdown.total, 0, "the describer gets 0, not a penalty");
+    assert.match(turn.result.caption, /out of free requests/);
+    assert.ok(turn.guesses[0]!.accuracy > 0, "the guess is scored by shared words");
     closeAll();
-    await brokenServer.close();
+    await brokeServer.close();
+  });
+
+  test("start_game answers, so the host page knows the click arrived", async () => {
+    const { host, closeAll } = await setUp(server.url, ["Sam"]);
+    const answer = await host.socket.timeout(2_000).emitWithAck("start_game");
+    assert.match(answer.error ?? "", /at least 2/);
+    closeAll();
+  });
+
+  test("playing again keeps a player whose phone just dropped, and they can rejoin", async () => {
+    const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);
+    host.socket.emit("start_game");
+    await host.waitFor("hall_of_shame", undefined, 15_000);
+    players[2]!.client.close(); // Bo's phone locked during the Hall of Shame
+    await host.waitFor("players", (p) => p.players.length === 2);
+
+    host.socket.emit("start_game");
+    await host.waitFor("round_start", () => host.all("round_start").length > 2);
+    const bo = new Client(server.url, "Bo again");
+    bo.socket.emit("join", { code, name: "Bo", playerId: players[2]!.id });
+    assert.equal((await bo.waitFor("joined")).player.id, players[2]!.id, "same player, not \"game started\"");
+    bo.close();
+    closeAll();
+  });
+
+  test("a dropped connection comes back as the same socket, and a host blip doesn't close the room", async () => {
+    const { host, code, closeAll } = await setUp(server.url, ["Sam", "Ana"]);
+    // A real phone: reconnects by itself after a dropped connection.
+    const phone = new Client(server.url, "Bo", { reconnection: true });
+    phone.socket.emit("join", { code, name: "Bo" });
+    await phone.waitFor("joined");
+    await host.waitFor("players", (p) => p.players.length === 3);
+
+    phone.socket.io.engine.close(); // the connection drops (not closed on purpose)
+    await host.waitFor("players", (p) => p.players.length === 2);
+    await new Promise((resolve) => phone.socket.once("connect", () => resolve(null)));
+    assert.equal(phone.socket.recovered, true);
+    await host.waitFor("players", () => host.all("players").at(-1)!.players.length === 3);
+
+    // The host page blips too; the room survives and still starts.
+    const hostPage = new Client(server.url, "host page", { reconnection: true });
+    hostPage.socket.emit("create_room");
+    const room = await hostPage.waitFor("room_created");
+    const sam = new Client(server.url, "Sam2");
+    sam.socket.emit("join", { code: room.code, name: "Sam" });
+    await sam.waitFor("joined");
+    hostPage.socket.io.engine.close();
+    await new Promise((resolve) => hostPage.socket.once("connect", () => resolve(null)));
+    assert.equal(hostPage.socket.recovered, true);
+    const answer = await hostPage.socket.timeout(2_000).emitWithAck("start_game");
+    assert.match(answer.error ?? "", /at least 2/, "same room, still there");
+    assert.equal(sam.all("error").length, 0, "players weren't told the host left");
+
+    [phone, hostPage, sam].forEach((c) => c.close());
+    closeAll();
   });
 
   test("playing again resets scores", async () => {
@@ -262,7 +330,7 @@ describe("guessing", () => {
     ana.client.socket.emit("guess", { text: target.id.replace(/-/g, " ") }); // e.g. "dog skateboard": close
     await ana.client.waitFor("guess_locked");
     const res = await submit(server.url, { roomCode: code, playerId: sam.id, text: "a dog" });
-    assert.equal(res.status, 200, "/submit answers before the reveal");
+    assert.equal(res.status, 200, "/submit answers with the reveal");
 
     const turn = await host.waitFor("round_result"); // Bo never guesses, so the window runs out
     assert.ok(Date.now() - started >= 900, "the reveal waited for the guess window");
@@ -287,7 +355,8 @@ describe("guessing", () => {
     const [sam, ana, bo] = [players[0]!, players[1]!, players[2]!];
     host.socket.emit("start_game");
     await sam.client.waitFor("your_turn");
-    await submit(server.url, { roomCode: code, playerId: sam.id, text: "a dog" });
+    // /submit answers with the reveal, which waits for the guesses, so don't wait for it here.
+    void submit(server.url, { roomCode: code, playerId: sam.id, text: "a dog" });
     ana.client.socket.emit("guess", { text: "a dog" });
     bo.client.socket.emit("guess", { text: "a cat" });
     // Without the early close this would take a minute.
@@ -296,7 +365,7 @@ describe("guessing", () => {
 
     // Ana's turn: Sam guesses, Bo leaves, nobody is left to wait for.
     await host.waitFor("describing", (d) => d.describer.id === ana.id, 5_000);
-    await submit(server.url, { roomCode: code, playerId: ana.id, text: "a dog" });
+    void submit(server.url, { roomCode: code, playerId: ana.id, text: "a dog" });
     sam.client.socket.emit("guess", { text: "a dog" });
     await sam.client.waitFor("guess_locked");
     bo.client.close();
@@ -324,9 +393,9 @@ describe("guessing", () => {
     await server.close();
   });
 
-  test("if the AI can't score guesses, shared words score them instead", async () => {
+  test("if the AI can't judge, shared words score the guesses and the description instead", async () => {
     const fake = createFakeAi(0);
-    const broken: Ai = { ...fake, scoreGuesses: async () => Promise.reject(new Error("Gemini is down")) };
+    const broken: Ai = { ...fake, judge: async () => Promise.reject(new Error("Gemini is down")) };
     const server = await startTestServer({ ai: broken, config: { ...slowWindows, describeMs: 1_000 } });
     const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana"]);
     host.socket.emit("start_game");
@@ -339,6 +408,7 @@ describe("guessing", () => {
     const turn = await host.waitFor("round_result", undefined, 3_000);
     console.error = originalError;
     assert.ok(turn.guesses[0]!.accuracy > 0, "the target's own words still match its description");
+    assert.match(turn.result.caption, /ran out of ink/);
     closeAll();
     await server.close();
   });

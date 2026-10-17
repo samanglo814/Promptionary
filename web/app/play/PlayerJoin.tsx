@@ -7,6 +7,7 @@
 // useEffect            = run code after the screen draws
 // useSyncExternalStore = read something from outside React (here: the URL) safely
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { warmUpMic } from "@/lib/mic";
 import {
   mockBreakdown,
   mockGuesses,
@@ -23,6 +24,7 @@ import { SERVER_URL, connect, guessErrorText, joinErrorText, type GameSocket } f
 import { Avatar, Button, Delta, Label, Panel, TextButton, type Tone } from "@/components/ui";
 import DescribeScreen from "./DescribeScreen";
 import GuessScreen from "./GuessScreen";
+import { hasSpeechToText } from "./MicRecorder";
 import PhoneShell from "./PhoneShell";
 
 // Read ?code= from the URL. Only works in the browser (window doesn't exist on the
@@ -135,7 +137,10 @@ export default function PlayerJoin() {
 
     // On first connect, and again after any reconnect (new socket), rejoin if we were in a room.
     // A saved session for a different room (e.g. scanned a new QR code) is ignored.
+    // A short drop (e.g. a locked screen) comes back "recovered": same connection, missed events
+    // replayed, nothing to do.
     s.on("connect", () => {
+      if (s.recovered) return;
       const saved = loadSession();
       const linkCode = codeFromUrl();
       if (saved && (!linkCode || linkCode === saved.code)) {
@@ -287,6 +292,9 @@ export default function PlayerJoin() {
   function join(e: React.FormEvent) {
     e.preventDefault(); // stop the browser from reloading the page on form submit
     if (!canJoin) return;
+    // Unlock audio now, during the tap. Phones that record audio (no speech-to-text) also get asked
+    // for the mic now, so the popup doesn't eat into anyone's turn.
+    warmUpMic({ openMic: !hasSpeechToText() });
 
     if (socket) {
       // The server answers with "joined" or "join_error" (handled above).

@@ -19,14 +19,17 @@ const vertexProject = process.env.VERTEX_PROJECT;
 const vertexLocation = process.env.VERTEX_LOCATION || "global";
 const generate = vertexProject ? vertexClient(vertexProject, vertexLocation) : apiKey ? geminiClient(apiKey) : undefined;
 const images = new ImageStore(publicUrl);
+const pollinations = (prompt: string) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN });
+const usePollinations = process.env.IMAGE_PROVIDER === "pollinations";
 const ai = generate
   ? createGeminiAi({
       generate,
       textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
+      transcribeModel: process.env.GEMINI_TRANSCRIBE_MODEL || "gemini-flash-lite-latest",
       imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
-      drawImage: process.env.IMAGE_PROVIDER === "pollinations"
-        ? (prompt) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN })
-        : undefined,
+      drawImage: usePollinations ? pollinations : undefined,
+      // The Gemini image model needs billing; without it, Pollinations draws instead.
+      fallbackDrawImage: usePollinations ? undefined : pollinations,
       images,
     })
   : undefined;

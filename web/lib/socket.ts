@@ -55,7 +55,8 @@ type ServerEvents = {
 // Messages we send the server.
 type ClientEvents = {
   create_room: () => void;
-  start_game: () => void;
+  // The server answers with why it didn't start (null = started).
+  start_game: (ack: (p: { error: string | null }) => void) => void;
   next: () => void;
   join: (p: { code: string; name: string; playerId?: string }) => void;
   guess: (p: { text: string }) => void;

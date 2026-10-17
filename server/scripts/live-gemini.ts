@@ -21,6 +21,7 @@ const images = new ImageStore("http://localhost");
 const ai = createGeminiAi({
   generate: vertexProject ? vertexClient(vertexProject, process.env.VERTEX_LOCATION || "global") : geminiClient(apiKey!),
   textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
+  transcribeModel: process.env.GEMINI_TRANSCRIBE_MODEL || "gemini-flash-lite-latest",
   imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
   drawImage: process.env.IMAGE_PROVIDER === "pollinations"
     ? (prompt) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN })
@@ -37,10 +38,13 @@ const cases = [
 for (const c of cases) {
   const started = Date.now();
   const transcript = await ai.transcribe({ kind: "text", text: c.text });
-  const drawing = await ai.draw(transcript, c.target);
+  const sketch = await ai.draw(transcript, c.target);
+  const guesses = ["a dog on a skateboard", "an astronaut"];
+  const judged = await ai.judge({ target: c.target, transcript, image: sketch.kind === "drawn" ? sketch.image : undefined, guesses });
+  const drawing = sketch.kind === "drawn" ? { imageUrl: sketch.imageUrl, ...judged.judgement } : sketch.drawing;
   const ms = Date.now() - started;
   const id = drawing.imageUrl.split("/images/")[1];
   const stored = id && (images as unknown as { images: Map<string, { data: Buffer }> }).images.get(id);
   if (stored) writeFileSync(`${outDir}/${c.target.id}.jpg`, stored.data);
-  console.log(JSON.stringify({ target: c.target.id, transcript, ms, ...drawing }, null, 1));
+  console.log(JSON.stringify({ target: c.target.id, transcript, ms, ...drawing, guesses, guessScores: judged.guessScores }, null, 1));
 }

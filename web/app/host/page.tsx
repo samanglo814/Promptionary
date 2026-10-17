@@ -97,6 +97,10 @@ export default function HostPage() {
   const [error, setError] = useState("");
   // The live connection. null in mock mode.
   const [socket, setSocket] = useState<GameSocket | null>(null);
+  // false while the connection to the server is down (it reconnects by itself).
+  const [connected, setConnected] = useState(true);
+  // true between clicking Start/Play again and the server answering.
+  const [starting, setStarting] = useState(false);
   // Sound on/off. The state drives the button's icon; setMuted tells the sound module.
   const [muted, setMutedState] = useState(false);
 
@@ -123,9 +127,24 @@ export default function HostPage() {
   useEffect(() => {
     if (!SERVER_URL) return;
     const s = connect();
-    // "connect" also fires after a reconnect, but a new connection means a new room anyway.
-    s.on("connect", () => s.emit("create_room"));
-    s.on("room_created", ({ code }) => setCode(code));
+    // A short drop (a Wi-Fi or tunnel blip) comes back "recovered": same room, missed events replayed.
+    // Anything longer and the server has closed the room, so make a new one.
+    let hadRoom = false;
+    s.on("connect", () => {
+      setConnected(true);
+      if (!s.recovered) s.emit("create_room");
+    });
+    s.on("disconnect", () => setConnected(false));
+    s.on("room_created", ({ code }) => {
+      setCode(code);
+      if (hadRoom) {
+        // The old room is gone, and its players with it: back to the lobby to rejoin.
+        setPlayers([]);
+        setPhase("lobby");
+        setError("The connection dropped for too long, so this is a new room. Everyone: scan the new code!");
+      }
+      hadRoom = true;
+    });
     s.on("players", ({ players }) => {
       setPlayers((prev) => {
         if (players.length > prev.length) playPop(); // someone joined
@@ -194,10 +213,21 @@ export default function HostPage() {
     };
   }, []);
 
-  // Ask the server to start (or restart) the game.
+  // Ask the server to start (or restart) the game. The server answers, so a click that never
+  // arrives (the connection is down) shows an error instead of doing nothing.
   function startGame() {
+    if (!socket || starting) return;
     setError("");
-    socket?.emit("start_game");
+    if (!socket.connected) {
+      setError("Not connected to the game server. Check the connection, then try again.");
+      return;
+    }
+    setStarting(true);
+    socket.timeout(5_000).emit("start_game", (err) => {
+      setStarting(false);
+      // A refusal (e.g. "Need at least 2 players") arrives as an "error" event too, shown above.
+      if (err) setError("The game server didn't answer. Check the connection, or refresh this page.");
+    });
   }
 
   // ---------- Mock mode ----------
@@ -275,12 +305,16 @@ export default function HostPage() {
       )}
       {socket && phase === "shame" && (
         <div className="fixed bottom-14 right-12 w-64">
-          <Button onClick={startGame}>Play again →</Button>
+          <Button onClick={startGame} disabled={starting}>
+            {starting ? "Starting…" : "Play again →"}
+          </Button>
         </div>
       )}
 
-      {error && (
-        <p className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-inner bg-ai px-5 py-2.5 font-bold text-stage">{error}</p>
+      {(error || !connected) && (
+        <p className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-inner bg-ai px-5 py-2.5 font-bold text-stage">
+          {connected ? error : "Connection lost. Reconnecting…"}
+        </p>
       )}
 
       {/* TEMP test controls (mock mode only), so every screen can be checked without a server */}

@@ -132,7 +132,8 @@ export type ServerToClientEvents = {
 
 export type ClientToServerEvents = {
   create_room: () => void;
-  start_game: () => void;
+  // ack answers with why it didn't start (null = started). Older pages may not send one.
+  start_game: (ack?: (p: { error: string | null }) => void) => void;
   next: () => void;
   // playerId is optional: send the id from an earlier `joined` to rejoin after a refresh.
   join: (p: { code: string; name: string; playerId?: string }) => void;
@@ -140,7 +141,7 @@ export type ClientToServerEvents = {
   guess: (p: { text: string }) => void;
 };
 
-// What a player handed in: a recording or typed text (exactly one).
+// What a player handed in: a recording (text is for the bot game and tests only).
 export type Description =
   | { kind: "audio"; audio: Buffer; mimeType: string }
   | { kind: "text"; text: string };

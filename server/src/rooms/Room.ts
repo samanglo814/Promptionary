@@ -1,4 +1,4 @@
-import type { Ai } from "../ai/index.js";
+import { AiOutOfQuotaError, type Ai, type Drawing, type Judgement, type Sketch } from "../ai/index.js";
 import { wordMatchScore } from "../ai/wordMatch.js";
 import type { GameIo, GameSocket } from "../app.js";
 import { findBannedWords } from "../bannedWords.js";
@@ -29,7 +29,12 @@ import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
                                                                    ↘ last turn of the game: game_over → hall_of_shame
 
   While someone describes, everyone else can type one guess, until config.guessMs after describing
-  started (or until everyone has guessed). The reveal waits for both the drawing and the guess scores.
+  started (or until everyone has guessed). Once both the drawing and the guesses are in, one AI call
+  judges them together (fewer calls, for the free tier), and the reveal follows.
+
+  If the AI can't help (down, or out of free requests), the game keeps going: drawings and guesses are
+  scored by shared words instead (wordMatchScore). If it can't even transcribe, the describer gets one
+  retry; a second failure, or running out of requests, ends the turn with 0 points for them (guesses still score).
 */
 
 export type Phase =
@@ -50,6 +55,7 @@ const MAX_AI_FAILURES = 2;
 
 type PlayerState = Player & {
   socketId: string | null; // null while disconnected
+  leftAt?: number; // when they disconnected
   lastTurn: number;
   prompterPoints: number;
   spectatorPoints: number;
@@ -71,9 +77,10 @@ type Turn = {
   guessesOpen: boolean;
   guessTimer?: NodeJS.Timeout;
   guesses: Map<string, Guess>; // by player id, in the order they came in
-  accuracies?: Map<string, number>; // set once the guesses are scored
-  drawing?: { result: SubmitResult; bannedHits: number; described: boolean }; // set once the AI is done
-  finished: boolean;
+  drawing?: { transcript: string; sketch: Sketch; bannedHits: number; described: boolean }; // set once drawn
+  judging: boolean; // the AI is judging the drawing and the guesses
+  // Settles with the turn's result, for the describer's /submit request.
+  result: Deferred<SubmitResult>;
 };
 
 // One finished turn of this game, for the awards.
@@ -82,7 +89,7 @@ type TurnRecord = { playerName: string; score: number; imageUrl: string; drawn: 
 // Thrown by submit(); the HTTP route turns it into a status code.
 export class SubmitError extends Error {
   constructor(
-    readonly status: 403 | 404 | 502,
+    readonly status: 403 | 404 | 502 | 503,
     message: string,
   ) {
     super(message);
@@ -129,6 +136,7 @@ export class Room {
     const existing = rejoinId ? this.players.get(rejoinId) : undefined;
     if (existing) {
       existing.socketId = socket.id;
+      existing.leftAt = undefined;
       this.attach(socket, existing);
       this.catchUp(socket, existing.id);
       return null;
@@ -180,16 +188,31 @@ export class Room {
     if (guess) socket.emit("guess_locked", { text: guess.text, speed: guess.speed });
   }
 
-  // A player's socket disconnected.
-  leave(playerId: string, socketId: string) {
+  // A player's connection came back by itself (Socket.io connection state recovery) with the
+  // same socket id. Events they missed are replayed by Socket.io, so there's nothing to catch up on.
+  // Returns false if the player is gone (e.g. a new game started without them).
+  resume(socket: GameSocket, playerId: string): boolean {
+    const player = this.players.get(playerId);
+    if (!player) return false;
+    player.socketId = socket.id;
+    player.leftAt = undefined;
+    this.broadcastPlayers();
+    return true;
+  }
+
+  // A player's socket disconnected. `onPurpose` = they closed the page (not a dropped connection).
+  leave(playerId: string, socketId: string, onPurpose = true) {
     const player = this.players.get(playerId);
     // Ignore if they already came back on a newer socket.
     if (!player || player.socketId !== socketId) return;
 
-    if (this.phase === "lobby") {
+    if (this.phase === "lobby" && onPurpose) {
       this.players.delete(playerId);
     } else {
+      // A dropped connection (e.g. a locked phone) may come back, so keep the player.
       player.socketId = null;
+      player.leftAt = Date.now();
+      if (this.phase === "lobby") return this.broadcastPlayers();
       // If it's their turn and they haven't submitted, give them a moment to come back, then skip them.
       // (If they already submitted, the turn finishes without them.)
       if (this.describerId === playerId && this.awaitingDescriber()) {
@@ -224,16 +247,19 @@ export class Room {
   start(): string | null {
     if (!["lobby", "game_over", "hall_of_shame"].includes(this.phase)) return "The game is already running.";
 
-    // Playing again: drop anyone who left, reset scores.
+    // Playing again: reset scores, and drop anyone who's been gone a while. Phones that only just
+    // dropped (a locked screen) stay in, and rejoin as themselves when they wake up.
+    const now = Date.now();
     for (const [id, p] of this.players) {
-      if (!p.socketId) this.players.delete(id);
+      if (!p.socketId && now - (p.leftAt ?? 0) > this.deps.config.dropPlayerAfterMs) this.players.delete(id);
       Object.assign(p, { score: 0, lastTurn: 0, prompterPoints: 0, spectatorPoints: 0, finalRoundPoints: 0 });
     }
-    if (this.players.size < this.deps.config.minPlayers) {
+    const connected = [...this.players.values()].filter((p) => p.socketId).length;
+    if (connected < this.deps.config.minPlayers) {
       return `Need at least ${this.deps.config.minPlayers} players to start.`;
     }
 
-    this.playerCount = this.players.size;
+    this.playerCount = connected;
     this.turnLog = [];
     this.roundIndex = -1;
     this.nextRound();
@@ -316,7 +342,8 @@ export class Room {
       guessesOpen: true,
       guesses: new Map(),
       aiFailures: 0,
-      finished: false,
+      judging: false,
+      result: deferred(),
     };
     this.turn = turn;
     this.phase = "describing";
@@ -326,7 +353,7 @@ export class Room {
       this.deps.io.to(describer.socketId).emit("your_turn", { target: publicTarget(turn.target), endsAt: turn.endsAt });
     }
     this.toRoom("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
-    turn.guessTimer = setTimeout(() => void this.closeGuesses(turn), config.guessMs);
+    turn.guessTimer = setTimeout(() => this.closeGuesses(turn), config.guessMs);
     this.after(config.describeMs + config.submitGraceMs, () => this.timeUp());
     this.closeGuessesIfAllIn(); // e.g. nobody else is connected
   }
@@ -359,36 +386,22 @@ export class Room {
     const waitingOn = [...this.players.values()].filter(
       (p) => p.socketId && p.id !== turn.describerId && !turn.guesses.has(p.id),
     );
-    if (waitingOn.length === 0) void this.closeGuesses(turn);
+    if (waitingOn.length === 0) this.closeGuesses(turn);
   }
 
-  // Stops taking guesses and scores them all in one AI call. If the AI can't, shared words decide.
-  private async closeGuesses(turn: Turn) {
+  // Stops taking guesses. They're scored with the drawing, once that's ready too.
+  private closeGuesses(turn: Turn) {
     if (!turn.guessesOpen) return;
     turn.guessesOpen = false;
     clearTimeout(turn.guessTimer);
     this.toRoom("guesses_locked", { playerIds: [...turn.guesses.keys()], open: false });
-
-    const guesses = [...turn.guesses.values()];
-    const texts = guesses.map((g) => g.text);
-    let scores: number[];
-    try {
-      scores = await this.deps.ai.scoreGuesses(turn.target, texts);
-      if (scores.length !== texts.length) throw new Error(`got ${scores.length} scores for ${texts.length} guesses`);
-    } catch (err) {
-      console.error(`[${this.code}] Scoring guesses failed, using word matching:`, err);
-      scores = texts.map((text) => wordMatchScore(turn.target.prompt, text));
-    }
-    if (this.closed || this.turn !== turn) return; // the turn was skipped meanwhile
-
-    turn.accuracies = new Map(guesses.map((g, i) => [g.playerId, clampPercent(scores[i]!)]));
-    this.finishIfReady(turn);
+    this.judgeIfReady(turn);
   }
 
   // ---------- Describing ----------
 
-  // Called by POST /submit. Resolves with the AI's result as soon as it's ready;
-  // everyone sees it (with the points) in round_result once the guesses are scored too.
+  // Called by POST /submit. Resolves with the turn's result once it's revealed (the drawing and the
+  // guesses are judged together, so this waits for guessing to close too).
   async submit(playerId: string, description: Description): Promise<SubmitResult> {
     const { config, ai } = this.deps;
     const turn = this.turn;
@@ -403,36 +416,47 @@ export class Room {
     this.phase = "processing";
     this.toRoom("processing", { describer: publicPlayer(describer) });
 
+    // Transcribing is the one step with no fallback: without it there's nothing to score.
     let transcript: string;
-    let bannedSaid: string[];
-    let drawing: Awaited<ReturnType<Ai["draw"]>>;
     try {
       transcript = (await ai.transcribe(description)).trim();
-      bannedSaid = findBannedWords(transcript, target.bannedWords);
-      if (this.closed) throw new SubmitError(404, "The room closed.");
-      for (const word of bannedSaid) this.toRoom("banned_buzz", { playerId, word });
-      drawing = await ai.draw(transcript, publicTarget(target));
     } catch (err) {
-      if (err instanceof SubmitError || this.closed) throw err;
-      console.error(`[${this.code}] AI pipeline failed:`, err);
-      // Failing again and again (e.g. out of quota) would loop forever: give up and move on.
+      if (this.closed || this.turn !== turn) throw new SubmitError(404, "The room closed.");
+      console.error(`[${this.code}] Transcribing failed:`, err);
+      // Out of requests: retrying can't help, so end the turn now instead of making everyone wait.
+      if (err instanceof AiOutOfQuotaError) {
+        this.endUndescribed(turn, "The AI is out of free requests, so it couldn't hear a thing. No points lost!");
+        throw new SubmitError(503, "The AI is out of free requests for now, so this turn can't be scored. Sorry!");
+      }
+      // Failing again and again would loop forever: give up and move on.
       if (++turn.aiFailures >= MAX_AI_FAILURES) {
-        this.endWithoutDrawing("https://placehold.co/512x512/png?text=AI+out+of+juice", "The AI ran out of juice. This one's on the house.");
-        throw new SubmitError(502, "The AI is having a moment. Moving on!");
+        this.endUndescribed(turn, "The AI ran out of juice. This one's on the house.");
+        throw new SubmitError(503, "The AI is having a moment. Moving on!");
       }
       this.retryDescribing(turn);
-      throw new SubmitError(502, "The AI had a problem. Try again!");
+      throw new SubmitError(502, "The AI couldn't listen to that. Send it again!");
     }
     if (this.closed || this.turn !== turn) throw new SubmitError(404, "The room closed.");
 
-    const score = drawing.refused ? 0 : clampPercent(drawing.score);
-    const result: SubmitResult = { transcript, targetImageUrl: target.imageUrl, ...drawing, score };
-    turn.drawing = { result, bannedHits: bannedSaid.length, described: true };
-    this.finishIfReady(turn);
-    return result;
+    const bannedSaid = findBannedWords(transcript, target.bannedWords);
+    for (const word of bannedSaid) this.toRoom("banned_buzz", { playerId, word });
+
+    let sketch: Sketch;
+    try {
+      sketch = await ai.draw(transcript, publicTarget(target));
+    } catch (err) {
+      // No drawing, but the description is fine: score its words instead of making them redo it.
+      console.error(`[${this.code}] Drawing failed, scoring the words instead:`, err);
+      sketch = { kind: "final", drawing: noDrawing(target.prompt, transcript) };
+    }
+    if (this.closed || this.turn !== turn) throw new SubmitError(404, "The room closed.");
+
+    turn.drawing = { transcript, sketch, bannedHits: bannedSaid.length, described: true };
+    this.judgeIfReady(turn);
+    return turn.result.promise;
   }
 
-  // The AI failed: give the describer back their turn, with enough time to try again.
+  // The AI failed (the first time this turn): give the describer back their turn, with enough time to try again.
   // Guesses stay, and anyone who hasn't guessed gets at least as long as the describer.
   private retryDescribing(turn: Turn) {
     const { config } = this.deps;
@@ -441,51 +465,87 @@ export class Room {
     if (turn.guessesOpen && turn.guessEndsAt < turn.endsAt) {
       turn.guessEndsAt = turn.endsAt;
       clearTimeout(turn.guessTimer);
-      turn.guessTimer = setTimeout(() => void this.closeGuesses(turn), turn.guessEndsAt - Date.now());
+      turn.guessTimer = setTimeout(() => this.closeGuesses(turn), turn.guessEndsAt - Date.now());
     }
     this.phase = "describing";
     if (describer.socketId) {
       this.deps.io.to(describer.socketId).emit("your_turn", { target: publicTarget(turn.target), endsAt: turn.endsAt });
     }
     this.toRoom("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
-    this.after(turn.endsAt - Date.now() + config.submitGraceMs, () => this.timeUp());
+    this.after(Math.max(0, turn.endsAt - Date.now()) + config.submitGraceMs, () => this.timeUp());
   }
 
   // The describer didn't submit in time. Guessers still get scored.
   private timeUp() {
-    this.endWithoutDrawing("https://placehold.co/512x512/png?text=*crickets*", "Total silence. The AI drew exactly what you said.");
-  }
-
-  // Ends the turn with no drawing (0 accuracy for the describer). Guessers still get scored.
-  private endWithoutDrawing(imageUrl: string, caption: string) {
     const turn = this.turn;
     if (!turn) return;
-    turn.drawing = {
-      result: {
-        transcript: "",
-        imageUrl,
-        targetImageUrl: turn.target.imageUrl,
-        score: 0,
-        gotRight: [],
-        gotWrong: [],
-        caption,
-      },
-      bannedHits: 0,
-      described: false,
+    this.endUndescribed(turn, "Total silence. The AI drew exactly what you said.");
+  }
+
+  // Ends a turn with no description: 0 points for the describer, guesses still scored.
+  private endUndescribed(turn: Turn, caption: string) {
+    this.clearTimer();
+    const drawing: Drawing = {
+      imageUrl: "https://placehold.co/512x512/png?text=*crickets*",
+      score: 0,
+      gotRight: [],
+      gotWrong: [],
+      caption,
     };
+    turn.drawing = { transcript: "", sketch: { kind: "final", drawing }, bannedHits: 0, described: false };
     this.phase = "processing";
-    if (!turn.accuracies) this.toRoom("processing", { describer: publicPlayer(this.describer()) });
-    this.finishIfReady(turn);
+    this.toRoom("processing", { describer: publicPlayer(this.describer()) });
+    this.judgeIfReady(turn);
   }
 
-  // The reveal needs both the drawing and the guess scores, whichever comes last.
-  private finishIfReady(turn: Turn) {
-    if (turn.finished || !turn.drawing || !turn.accuracies || this.turn !== turn) return;
-    turn.finished = true;
-    this.finishTurn(turn, turn.drawing, turn.accuracies);
+  // Once the drawing and the guesses are both in, judge them in one AI call (or by shared words if the AI can't).
+  private judgeIfReady(turn: Turn) {
+    if (turn.judging || !turn.drawing || turn.guessesOpen || this.turn !== turn) return;
+    turn.judging = true;
+    void this.judge(turn, turn.drawing);
   }
 
-  private finishTurn(turn: Turn, drawing: NonNullable<Turn["drawing"]>, accuracies: Map<string, number>) {
+  private async judge(turn: Turn, drawn: NonNullable<Turn["drawing"]>) {
+    const { transcript, sketch } = drawn;
+    const target = turn.target;
+    const guesses = [...turn.guesses.values()];
+    let judgement: Judgement | undefined;
+    let scores: number[];
+    try {
+      const judged = await this.deps.ai.judge({
+        target,
+        transcript,
+        image: sketch.kind === "drawn" ? sketch.image : undefined,
+        guesses: guesses.map((g) => g.text),
+      });
+      if (judged.guessScores.length !== guesses.length) {
+        throw new Error(`got ${judged.guessScores.length} scores for ${guesses.length} guesses`);
+      }
+      if (sketch.kind === "drawn" && !judged.judgement) throw new Error("the drawing wasn't judged");
+      judgement = judged.judgement;
+      scores = judged.guessScores;
+    } catch (err) {
+      console.error(`[${this.code}] Judging failed, using word matching:`, err);
+      scores = guesses.map((g) => wordMatchScore(target.prompt, g.text));
+    }
+    if (this.closed || this.turn !== turn) return; // the turn was skipped meanwhile
+
+    const drawing: Drawing =
+      sketch.kind === "final"
+        ? sketch.drawing
+        : { imageUrl: sketch.imageUrl, ...(judgement ?? noDrawing(target.prompt, transcript)) };
+    const score = drawing.refused ? 0 : clampPercent(drawing.score);
+    const result: SubmitResult = { transcript, targetImageUrl: target.imageUrl, ...drawing, score };
+    const accuracies = new Map(guesses.map((g, i) => [g.playerId, clampPercent(scores[i]!)]));
+    this.finishTurn(turn, { result, bannedHits: drawn.bannedHits, described: drawn.described }, accuracies);
+    turn.result.resolve(result);
+  }
+
+  private finishTurn(
+    turn: Turn,
+    drawing: { result: SubmitResult; bannedHits: number; described: boolean },
+    accuracies: Map<string, number>,
+  ) {
     const { config } = this.deps;
     const multiplier = this.multiplier();
     const finalRound = this.roundIndex === config.roundMultipliers.length - 1;
@@ -633,12 +693,38 @@ export class Room {
     if (!this.turn) return;
     clearTimeout(this.turn.guessTimer);
     this.turn.guessesOpen = false;
+    this.turn.result.reject(new SubmitError(404, "That turn is over."));
     this.turn = null;
   }
 }
 
 function publicPlayer({ id, name, score }: Player): Player {
   return { id, name, score };
+}
+
+// When there's no drawing to judge (the AI couldn't draw or judge), the description's words are scored instead.
+function noDrawing(prompt: string, transcript: string): Drawing {
+  return {
+    imageUrl: "https://placehold.co/512x512/png?text=The+AI+ran+out+of+ink",
+    score: wordMatchScore(prompt, transcript),
+    gotRight: [],
+    gotWrong: [],
+    caption: "The AI ran out of ink, so your words were scored instead.",
+  };
+}
+
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void; reject: (err: unknown) => void };
+
+// A promise settled from outside. Rejections nobody waits for (no /submit came) are ignored.
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  promise.catch(() => {});
+  return { promise, resolve, reject };
 }
 
 function clampPercent(value: number): number {

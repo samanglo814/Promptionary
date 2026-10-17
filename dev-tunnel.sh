@@ -52,7 +52,8 @@ echo "Starting tunnels..."
 server_url=$(tunnel 4000)
 web_url=$(tunnel 3000)
 
-(cd server && PUBLIC_URL="$server_url" CLIENT_ORIGIN="http://localhost:3000,$web_url" npm run dev) &
+# npm start, not npm run dev: the dev server restarts on every file save, which ends every game in progress.
+(cd server && PUBLIC_URL="$server_url" CLIENT_ORIGIN="http://localhost:3000,$web_url" npm start) &
 (cd web && NEXT_PUBLIC_SERVER_URL="$server_url" npm run dev) &
 
 # Waits until an address answers through its tunnel (new tunnels take a little while).
