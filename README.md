@@ -18,22 +18,32 @@ A multiplayer party game where the fun is the gap between what you said and what
 2. **Players** join on their phones, with no account needed.
 3. On your turn, your phone shows a **secret image** and a list of **banned words**.
 4. You have 20 seconds to **describe it by voice**. Say a banned word and you get buzzed.
-5. **Gemini** transcribes your description, generates an image from it, and scores how close it got.
-6. The **reveal** shows the original and the AI's version side by side, with a score and a roast caption.
-7. After the final round: the **scoreboard**, the **Hall of Shame** (the night's worst misses), and a **Storybook** recap you can share.
+5. Everyone else **types one guess** at what the image is. Right and fast earns the most.
+6. **Gemini** transcribes your description, generates an image from it, scores how close it got, and scores the guesses.
+7. The **reveal** shows the original and the AI's version side by side, with a score, a roast caption, and everyone's points.
+8. Everyone describes once per round, for **2 rounds**. Round 2 is worth **1.5×**, and the leader goes last.
+9. After the final round: the **podium** with awards, the **Hall of Shame** (the night's worst misses), and a **Storybook** recap you can share.
+
+### Points
+
+- **Describing** (up to 1000 a turn, 1500 in round 2): how close the AI's drawing is (700), how well the others guessed (200), and how fast you finished (100, if the drawing is at least 40% right). −100 for each banned word.
+- **Guessing**: accuracy × speed. A guess is worth less in bigger rooms, so guessing stays about 40% of a perfect game whatever the room size (max 400 a guess, 600 in round 2).
+- Ties go to whoever scored more in round 2, then to the better guesser. The full rules are in [`docs/data-contract.md`](docs/data-contract.md#2-game-flow).
 
 ### Game flow
 
 ```mermaid
 stateDiagram-v2
     [*] --> Lobby
-    Lobby --> Intro: host starts game
-    Intro --> Describing: player sees target
+    Lobby --> RoundStart: host starts game
+    RoundStart --> Intro: round 1, then round 2 (x1.5)
+    Intro --> Describing: player sees target, others guess
     Describing --> Processing: audio submitted
-    Processing --> Reveal: image + score + caption
-    Reveal --> Intro: next round
-    Reveal --> Scoreboard: final round done
-    Scoreboard --> [*]
+    Processing --> Reveal: image + score + guesses scored
+    Reveal --> Intro: next turn
+    Reveal --> RoundStart: round over
+    Reveal --> Podium: final turn done
+    Podium --> [*]
 ```
 
 ---
@@ -223,7 +233,6 @@ Set `DEMO_MODE=true` to replay cached results with no live API calls. This is us
 
 ## 🔮 What's Next
 
-- Team mode (one describes, others guess what the AI will draw)
 - Daily challenge with a shareable result card
 - Voiced narrator for roast captions
 

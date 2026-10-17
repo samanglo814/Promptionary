@@ -6,14 +6,14 @@ import { type Standing } from "@/lib/mocks";
 
 // What the host page passes in.
 type Props = {
-  standings: Standing[]; // every player's total + last-round points, in any order
+  standings: Standing[]; // every player's total + last-turn points, in any order
   final: boolean; // false = between rounds (ranked list), true = end of game (podium)
 };
 
-// Sorts highest score first. [...standings] makes a copy, because .sort() changes
-// the array it's called on, and we shouldn't change data we were handed.
+// Sorts by the server's rank (ties are already broken there). [...standings] makes a copy,
+// because .sort() changes the array it's called on, and we shouldn't change data we were handed.
 function rank(standings: Standing[]) {
-  return [...standings].sort((a, b) => b.score - a.score);
+  return [...standings].sort((a, b) => a.rank - b.rank);
 }
 
 export default function Scoreboard({ standings, final }: Props) {
@@ -39,7 +39,7 @@ function RankedList({ ranked }: { ranked: Standing[] }) {
       <ol className="w-full max-w-3xl flex flex-col gap-3">
         {ranked.map((p, i) => {
           const delay = 300 + i * ROW_STAGGER; // each row waits a bit longer than the one above
-          const leader = i === 0;
+          const leader = p.rank === 1;
 
           return (
             <li
@@ -53,7 +53,7 @@ function RankedList({ ranked }: { ranked: Standing[] }) {
                   leader ? "bg-zap" : "bg-ink/10"
                 }`}
               >
-                {i + 1}
+                {p.rank}
               </span>
 
               {/* The bar. `relative` lets the colored fill sit behind the name.
@@ -74,13 +74,13 @@ function RankedList({ ranked }: { ranked: Standing[] }) {
                 </span>
               </div>
 
-              {/* Points earned in the round that just ended. Hidden if they got 0. */}
-              <span className="w-16 text-right text-xl font-bold text-cool">
-                {p.lastRound > 0 && `+${p.lastRound}`}
+              {/* Points earned in the turn that just ended. Hidden if they got 0. */}
+              <span className="w-20 text-right text-xl font-bold text-cool">
+                {p.lastTurn > 0 && `+${p.lastTurn}`}
               </span>
 
               {/* Total score. tabular-nums makes every digit the same width so numbers line up. */}
-              <span className="w-20 text-right text-3xl font-black tabular-nums">{p.score}</span>
+              <span className="w-24 text-right text-3xl font-black tabular-nums">{p.score}</span>
             </li>
           );
         })}

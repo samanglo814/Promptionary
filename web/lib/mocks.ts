@@ -7,8 +7,14 @@
 // A person in the room.
 export type Player = { id: string; name: string; score: number };
 
-// A player on the scoreboard: their total plus what they earned in the round that just ended.
-export type Standing = Player & { lastRound: number };
+// A player on the scoreboard. The server sends standings sorted, best first, with ties already broken.
+export type Standing = Player & {
+  lastTurn: number; // points earned in the turn that just ended (describing or guessing)
+  prompterPoints: number; // all points from describing
+  spectatorPoints: number; // all points from guessing
+  finalRoundPoints: number; // points earned in the last round (the first tiebreak)
+  rank: number; // 1 = first; players tied on score and both tiebreaks share a rank
+};
 
 // The secret image a player has to describe, and the words they can't say.
 // The server picks one per round from the image bank (server/data/targets.json).
@@ -29,6 +35,30 @@ export type SubmitResult = {
   caption: string; // short roast line
   refused?: boolean; // true if the image generator refused to draw it
 };
+
+// How the describer's points for one turn add up. Each line is before the multiplier;
+// total = (accuracy + clarity + speed − bannedPenalty, never below 0) × multiplier.
+export type PrompterBreakdown = {
+  accuracy: number; // up to 700: how close the AI's drawing is
+  clarity: number; // up to 200: how well the guessers did
+  speed: number; // up to 100: time left when they sent it
+  bannedPenalty: number; // 100 per banned word said
+  multiplier: number; // 1 in round 1, 1.5 in round 2
+  total: number;
+};
+
+// One guess, scored. points = max for this turn × accuracy × speed.
+export type GuessResult = {
+  playerId: string;
+  playerName: string;
+  text: string;
+  accuracy: number; // 0–100, how close the guess is to the secret image
+  speed: number; // 70–100, how much of its value the guess kept by being early
+  points: number;
+};
+
+// An end-of-game award. imageUrl is "" for awards without a picture.
+export type Award = { title: string; playerName: string; imageUrl: string };
 
 // The night's worst moments, for the Hall of Shame screen.
 // The server builds this from the rounds logged in Tiger Data (#23).
@@ -59,14 +89,14 @@ export const mockPlayers: Player[] = [
   { id: "3", name: "Priya", score: 0 },
 ];
 
-// Scores partway through a game. Deliberately NOT in order, because the
-// scoreboard has to sort them itself (the server may send them in any order).
+// Scores partway through a game. Deliberately NOT in order: the scoreboard sorts by rank itself,
+// so mock data and old servers still show the right order.
 export const mockStandings: Standing[] = [
-  { id: "1", name: "Sam", score: 142, lastRound: 42 },
-  { id: "2", name: "Gabriel", score: 188, lastRound: 71 },
-  { id: "3", name: "Chadrick", score: 97, lastRound: 12 },
-  { id: "4", name: "Charisse", score: 163, lastRound: 0 },
-  { id: "5", name: "Abigail", score: 120, lastRound: 55 },
+  { id: "1", name: "Sam", score: 1420, lastTurn: 42, prompterPoints: 1200, spectatorPoints: 220, finalRoundPoints: 0, rank: 3 },
+  { id: "2", name: "Gabriel", score: 1880, lastTurn: 705, prompterPoints: 1600, spectatorPoints: 280, finalRoundPoints: 0, rank: 1 },
+  { id: "3", name: "Chadrick", score: 970, lastTurn: 120, prompterPoints: 850, spectatorPoints: 120, finalRoundPoints: 0, rank: 5 },
+  { id: "4", name: "Charisse", score: 1630, lastTurn: 0, prompterPoints: 1300, spectatorPoints: 330, finalRoundPoints: 0, rank: 2 },
+  { id: "5", name: "Abigail", score: 1200, lastTurn: 155, prompterPoints: 1000, spectatorPoints: 200, finalRoundPoints: 0, rank: 4 },
 ];
 
 export const mockTarget: Target = {

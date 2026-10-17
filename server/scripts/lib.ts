@@ -7,8 +7,10 @@ import type { ClientToServerEvents, ServerToClientEvents, SubmitResult } from ".
 
 // Short timings so a whole game takes a few seconds.
 export const fastConfig: Partial<GameConfig> = {
+  roundIntroMs: 50,
   introMs: 50,
   describeMs: 1_000,
+  guessMs: 1_200,
   submitGraceMs: 200,
   retryMs: 1_000,
   reconnectGraceMs: 300,

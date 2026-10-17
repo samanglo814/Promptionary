@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import type { Ai } from "../src/ai/index.js";
 import { createFakeAi } from "../src/ai/fake.js";
-import { Client, startTestServer, submit } from "../scripts/lib.js";
+import { Client, fastConfig, startTestServer, submit } from "../scripts/lib.js";
 import { playGame } from "../scripts/playGame.js";
 
 // Opens a room with a host and the given players, all joined.
@@ -58,7 +58,7 @@ describe("game server", () => {
     await late.waitFor("joined");
 
     host.socket.emit("start_game");
-    await host.waitFor("round_intro");
+    await host.waitFor("turn_intro");
     assert.equal(await tryJoin({ code, name: "Lee" }), "game_started");
     late.close();
     closeAll();
@@ -111,7 +111,7 @@ describe("game server", () => {
     host.socket.emit("start_game");
     await players[0]!.client.waitFor("your_turn");
     players[0]!.client.close();
-    const intro = await host.waitFor("round_intro", (r) => r.round === 2);
+    const intro = await host.waitFor("turn_intro", (t) => t.turn === 2);
     assert.equal(intro.describer.name, "Ana");
     closeAll();
   });
@@ -132,7 +132,7 @@ describe("game server", () => {
   });
 
   test("the host can skip the reveal", async () => {
-    const slow = await startTestServer({ config: { introMs: 50, revealMs: 60_000, fakeAiDelayMs: 0 } });
+    const slow = await startTestServer({ config: { ...fastConfig, revealMs: 60_000, fakeAiDelayMs: 0 } });
     const { host, code, players, closeAll } = await setUp(slow.url, ["Sam", "Ana"]);
     host.socket.emit("start_game");
     await players[0]!.client.waitFor("your_turn");
@@ -180,7 +180,159 @@ describe("game server", () => {
     host.socket.emit("start_game");
     await host.waitFor("hall_of_shame", undefined, 15_000);
     host.socket.emit("start_game");
-    await host.waitFor("round_intro", (r) => r.round === 1 && host.all("round_intro").length > 2);
+    // 2 players × 2 rounds = 4 turns in the first game.
+    await host.waitFor("turn_intro", (t) => t.round === 1 && host.all("turn_intro").length > 4);
+    const restart = host.all("round_start").at(-1)!;
+    assert.deepEqual([restart.round, restart.leader, restart.gap], [1, null, 0], "scores were reset");
     closeAll();
+  });
+});
+
+describe("guessing", () => {
+  // Long describing and guessing windows, so anything that ends a turn early is the code under test.
+  const slowWindows = { ...fastConfig, describeMs: 60_000, guessMs: 60_000, fakeAiDelayMs: 0 };
+
+  test("one guess per player, only while someone is describing, never by the describer", async () => {
+    const server = await startTestServer({ config: slowWindows });
+    const { host, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);
+    const [sam, ana] = [players[0]!, players[1]!];
+    const guess = async (player: { client: Client }, text: string) => {
+      const before = player.client.all("guess_error").length;
+      player.client.socket.emit("guess", { text });
+      await Promise.race([
+        player.client.waitFor("guess_error", () => player.client.all("guess_error").length > before),
+        player.client.waitFor("guess_locked", (g) => g.text === text.trim().replace(/\s+/g, " ")),
+      ]);
+      return player.client.all("guess_error").slice(before)[0]?.reason ?? "ok";
+    };
+
+    assert.equal(await guess(ana, "a dog"), "not_now", "lobby");
+    host.socket.emit("start_game");
+    await sam.client.waitFor("your_turn");
+    assert.equal(await guess(sam, "a dog"), "describer");
+    assert.equal(await guess(ana, "   "), "invalid_guess");
+    assert.equal(await guess(ana, "x".repeat(61)), "invalid_guess");
+    assert.equal(await guess(ana, "  a   dog on wheels "), "ok");
+    const locked = ana.client.all("guess_locked")[0]!;
+    assert.equal(locked.text, "a dog on wheels", "whitespace is tidied");
+    assert.ok(locked.speed > 95 && locked.speed <= 100, `an instant guess keeps its value (${locked.speed})`);
+    assert.equal(await guess(ana, "a cat"), "already_guessed");
+
+    const lit = await host.waitFor("guesses_locked", (g) => g.playerIds.length === 1);
+    assert.deepEqual(lit, { playerIds: [ana.id], open: true }, "the host sees who guessed, not what");
+    assert.equal(host.log.some((e) => JSON.stringify(e.payload).includes("dog on wheels")), false);
+    closeAll();
+    await server.close();
+  });
+
+  test("the reveal waits for the guess window, and guesses earn points", async () => {
+    const server = await startTestServer({ config: { ...fastConfig, guessMs: 1_000, fakeAiDelayMs: 0 } });
+    const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);
+    const [sam, ana] = [players[0]!, players[1]!];
+    host.socket.emit("start_game");
+    const { target } = await sam.client.waitFor("your_turn");
+    const started = Date.now();
+    ana.client.socket.emit("guess", { text: target.id.replace(/-/g, " ") }); // e.g. "dog skateboard": close
+    await ana.client.waitFor("guess_locked");
+    const res = await submit(server.url, { roomCode: code, playerId: sam.id, text: "a dog" });
+    assert.equal(res.status, 200, "/submit answers before the reveal");
+
+    const turn = await host.waitFor("round_result"); // Bo never guesses, so the window runs out
+    assert.ok(Date.now() - started >= 900, "the reveal waited for the guess window");
+    assert.equal(turn.guesses.length, 1);
+    const [g] = turn.guesses;
+    assert.equal(g!.playerName, "Ana");
+    assert.ok(g!.accuracy > 0 && g!.points > 0, `a close guess earns points: ${JSON.stringify(g)}`);
+    // 3 players: one guess is worth up to 335 in round 1.
+    assert.equal(g!.points, Math.round((335 * g!.accuracy * g!.speed) / 10_000));
+    assert.equal(turn.breakdown.clarity, Math.round(2 * g!.accuracy), "clarity comes from the guesses");
+
+    const { standings } = await host.waitFor("scoreboard");
+    assert.equal(standings.find((s) => s.id === ana.id)!.spectatorPoints, g!.points);
+    assert.equal(standings.find((s) => s.id === sam.id)!.prompterPoints, turn.breakdown.total);
+    closeAll();
+    await server.close();
+  });
+
+  test("guessing closes early once everyone has guessed, or the last one waiting leaves", async () => {
+    const server = await startTestServer({ config: slowWindows });
+    const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);
+    const [sam, ana, bo] = [players[0]!, players[1]!, players[2]!];
+    host.socket.emit("start_game");
+    await sam.client.waitFor("your_turn");
+    await submit(server.url, { roomCode: code, playerId: sam.id, text: "a dog" });
+    ana.client.socket.emit("guess", { text: "a dog" });
+    bo.client.socket.emit("guess", { text: "a cat" });
+    // Without the early close this would take a minute.
+    const first = await host.waitFor("round_result", undefined, 3_000);
+    assert.equal(first.guesses.length, 2);
+
+    // Ana's turn: Sam guesses, Bo leaves, nobody is left to wait for.
+    await host.waitFor("describing", (d) => d.describer.id === ana.id, 5_000);
+    await submit(server.url, { roomCode: code, playerId: ana.id, text: "a dog" });
+    sam.client.socket.emit("guess", { text: "a dog" });
+    await sam.client.waitFor("guess_locked");
+    bo.client.close();
+    await host.waitFor("round_result", (r) => r.playerName === "Ana", 3_000);
+    closeAll();
+    await server.close();
+  });
+
+  test("a guesser who refreshes gets the guess box and their guess back", async () => {
+    const server = await startTestServer({ config: slowWindows });
+    const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);
+    host.socket.emit("start_game");
+    await players[0]!.client.waitFor("your_turn");
+    players[1]!.client.socket.emit("guess", { text: "a dog" });
+    await players[1]!.client.waitFor("guess_locked");
+
+    players[1]!.client.close(); // phone refreshed
+    const again = new Client(server.url, "Ana again");
+    again.socket.emit("join", { code, name: "Ana", playerId: players[1]!.id });
+    const describing = await again.waitFor("describing");
+    assert.equal(describing.describer.name, "Sam");
+    assert.equal((await again.waitFor("guess_locked")).text, "a dog");
+    again.close();
+    closeAll();
+    await server.close();
+  });
+
+  test("if the AI can't score guesses, shared words score them instead", async () => {
+    const fake = createFakeAi(0);
+    const broken: Ai = { ...fake, scoreGuesses: async () => Promise.reject(new Error("Gemini is down")) };
+    const server = await startTestServer({ ai: broken, config: { ...slowWindows, describeMs: 1_000 } });
+    const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana"]);
+    host.socket.emit("start_game");
+    const { target } = await players[0]!.client.waitFor("your_turn");
+
+    const originalError = console.error;
+    console.error = () => {}; // the server logs the failure; keep test output clean
+    players[1]!.client.socket.emit("guess", { text: target.id.replace(/-/g, " ") });
+    await submit(server.url, { roomCode: code, playerId: players[0]!.id, text: "a dog" });
+    const turn = await host.waitFor("round_result", undefined, 3_000);
+    console.error = originalError;
+    assert.ok(turn.guesses[0]!.accuracy > 0, "the target's own words still match its description");
+    closeAll();
+    await server.close();
+  });
+
+  test("round 2 is worth 1.5x and goes lowest score first", async () => {
+    const server = await startTestServer({ config: { ...fastConfig, fakeAiDelayMs: 0 } });
+    const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);
+    // Only Sam describes in round 1, so Ana and Bo (0 points) go before him in round 2.
+    players[0]!.client.socket.once("your_turn", () => {
+      void submit(server.url, { roomCode: code, playerId: players[0]!.id, text: "a scruffy dog riding a skateboard" });
+    });
+    host.socket.emit("start_game");
+    const round2 = await host.waitFor("round_start", (r) => r.round === 2, 15_000);
+    assert.equal(round2.multiplier, 1.5);
+    const samScore = host.all("scoreboard").at(-1)!.standings.find((s) => s.name === "Sam")!.score;
+    if (samScore > 0) assert.deepEqual([round2.leader?.name, round2.gap], ["Sam", samScore]);
+
+    await host.waitFor("turn_intro", (t) => t.round === 2 && t.turn === 3, 15_000);
+    const order = host.all("turn_intro").filter((t) => t.round === 2).map((t) => t.describer.name);
+    assert.deepEqual(order, samScore > 0 ? ["Ana", "Bo", "Sam"] : ["Sam", "Ana", "Bo"]);
+    closeAll();
+    await server.close();
   });
 });

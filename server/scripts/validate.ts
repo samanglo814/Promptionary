@@ -5,12 +5,15 @@ type Shape = Record<string, (v: unknown) => boolean>;
 
 const str = (v: unknown) => typeof v === "string";
 const int = (v: unknown) => Number.isInteger(v);
+const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 const bool = (v: unknown) => typeof v === "boolean";
 const strings = (v: unknown) => Array.isArray(v) && v.every(str);
 const optional = (check: (v: unknown) => boolean) => (v: unknown) => v === undefined || check(v);
 const listOf = (shape: Shape) => (v: unknown) => Array.isArray(v) && v.every((item) => matches(item, shape));
 const obj = (shape: Shape) => (v: unknown) => matches(v, shape);
 const percent = (v: unknown) => int(v) && (v as number) >= 0 && (v as number) <= 100;
+const nonNegative = (v: unknown) => int(v) && (v as number) >= 0;
+const nullable = (check: (v: unknown) => boolean) => (v: unknown) => v === null || check(v);
 
 function matches(value: unknown, shape: Shape): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -20,7 +23,14 @@ function matches(value: unknown, shape: Shape): boolean {
 }
 
 const player: Shape = { id: str, name: str, score: int };
-const standing: Shape = { ...player, lastRound: int };
+const standing: Shape = {
+  ...player,
+  lastTurn: nonNegative,
+  prompterPoints: nonNegative,
+  spectatorPoints: nonNegative,
+  finalRoundPoints: nonNegative,
+  rank: (v) => int(v) && (v as number) >= 1,
+};
 const target: Shape = { id: str, imageUrl: str, bannedWords: strings };
 export const submitResult: Shape = {
   transcript: str,
@@ -32,6 +42,23 @@ export const submitResult: Shape = {
   caption: str,
   refused: optional(bool),
 };
+export const breakdown: Shape = {
+  accuracy: nonNegative,
+  clarity: nonNegative,
+  speed: nonNegative,
+  bannedPenalty: nonNegative,
+  multiplier: (v) => num(v) && (v as number) > 0,
+  total: nonNegative,
+};
+export const guessResult: Shape = {
+  playerId: str,
+  playerName: str,
+  text: str,
+  accuracy: percent,
+  speed: percent,
+  points: nonNegative,
+};
+const award: Shape = { title: str, playerName: str, imageUrl: str };
 const hallOfShame: Shape = {
   stats: obj({ roundsPlayed: int, avgScore: int, bannedBuzzes: int, refusals: int }),
   worstMisses: listOf({ playerName: str, transcript: str, imageUrl: str, score: int }),
@@ -46,14 +73,18 @@ export const eventShapes: Record<string, Shape> = {
     reason: (v) => ["room_not_found", "name_taken", "game_started", "room_full", "invalid_name"].includes(v as string),
   },
   your_turn: { target: obj(target), endsAt: int },
+  guess_locked: { text: str, speed: percent },
+  guess_error: { reason: (v) => ["not_now", "describer", "already_guessed", "invalid_guess"].includes(v as string) },
   players: { players: listOf(player) },
-  round_intro: { round: int, totalRounds: int, describer: obj(player) },
-  describing: { describer: obj(player), endsAt: int },
+  round_start: { round: int, totalRounds: int, multiplier: num, leader: nullable(obj(player)), gap: nonNegative },
+  turn_intro: { round: int, totalRounds: int, turn: int, turnsInRound: int, multiplier: num, describer: obj(player) },
+  describing: { describer: obj(player), endsAt: int, guessEndsAt: int },
+  guesses_locked: { playerIds: strings, open: bool },
   banned_buzz: { playerId: str, word: str },
   processing: { describer: obj(player) },
-  round_result: { playerName: str, result: obj(submitResult) },
+  round_result: { playerName: str, result: obj(submitResult), breakdown: obj(breakdown), guesses: listOf(guessResult) },
   scoreboard: { standings: listOf(standing) },
-  game_over: { standings: listOf(standing) },
+  game_over: { standings: listOf(standing), awards: listOf(award) },
   hall_of_shame: { data: obj(hallOfShame) },
   error: { message: str },
 };

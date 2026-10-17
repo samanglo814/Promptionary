@@ -43,7 +43,8 @@ export function readLocalTargetImage(url: string): { data: Buffer; mimeType: str
 }
 
 // A random target this room hasn't seen yet (starts over once all are used).
-export function pickTarget(targets: TargetEntry[], used: Set<string>): Target {
+// The server keeps the whole entry (guesses are scored against `prompt`); phones get publicTarget().
+export function pickTarget(targets: TargetEntry[], used: Set<string>): TargetEntry {
   let fresh = targets.filter((t) => !used.has(t.id));
   if (fresh.length === 0) {
     used.clear();
@@ -51,5 +52,10 @@ export function pickTarget(targets: TargetEntry[], used: Set<string>): Target {
   }
   const t = fresh[Math.floor(Math.random() * fresh.length)]!;
   used.add(t.id);
-  return { id: t.id, imageUrl: t.imageUrl, bannedWords: t.bannedWords };
+  return t;
+}
+
+// What the describer's phone sees: no prompt, so the answer isn't sitting in the page.
+export function publicTarget({ id, imageUrl, bannedWords }: TargetEntry): Target {
+  return { id, imageUrl, bannedWords };
 }

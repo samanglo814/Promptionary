@@ -31,9 +31,13 @@ type Player = {
   score: number;  // running total
 };
 
-// A player on the scoreboard.
+// A player on the scoreboard. Standings are sent SORTED, best first, with ties broken.
 type Standing = Player & {
-  lastRound: number; // points earned in the round that just ended (0 if none)
+  lastTurn: number;         // points earned in the turn that just ended, describing or guessing (0 if none)
+  prompterPoints: number;   // all points from describing
+  spectatorPoints: number;  // all points from guessing
+  finalRoundPoints: number; // points earned in the last round (the first tiebreak)
+  rank: number;             // 1 = first; players tied on score and both tiebreaks share a rank
 };
 
 // The secret image for a round. Sent ONLY to the describer's phone.
@@ -43,7 +47,7 @@ type Target = {
   bannedWords: string[]; // lowercase, whole words
 };
 
-// One round's result. Returned by POST /submit and broadcast as round_result.
+// What the AI made of one description. Returned by POST /submit and sent inside round_result.
 type SubmitResult = {
   transcript: string;     // what Gemini heard (or the typed text)
   imageUrl: string;       // what the AI drew; "" when refused
@@ -53,6 +57,34 @@ type SubmitResult = {
   gotWrong: string[];     // short phrases, can be empty
   caption: string;        // roast line, max ~15 words, never mean to the player
   refused?: boolean;      // true if image generation was blocked by safety filters
+};
+
+// How the describer's points for one turn add up (see "Points" below).
+// Each line is before the multiplier; total = (accuracy + clarity + speed − bannedPenalty, never below 0) × multiplier.
+type PrompterBreakdown = {
+  accuracy: number;      // up to 700
+  clarity: number;       // up to 200
+  speed: number;         // up to 100
+  bannedPenalty: number; // 100 per banned word said
+  multiplier: number;    // 1 in round 1, 1.5 in round 2
+  total: number;
+};
+
+// One guess, scored. points = (max for this turn) × accuracy/100 × speed/100, rounded.
+type GuessResult = {
+  playerId: string;
+  playerName: string;
+  text: string;
+  accuracy: number; // 0–100 integer, how close the guess is to the secret image
+  speed: number;    // 70–100 integer, how much of its value the guess kept by being early
+  points: number;
+};
+
+// An end-of-game award, sent with game_over.
+type Award = {
+  title: string;      // "Closest Drawing", "Most Wrong Masterpiece", "Sharpest Guesser"
+  playerName: string;
+  imageUrl: string;   // the AI drawing, or "" for awards without a picture
 };
 
 // The night's worst moments, built from Tiger Data.
@@ -85,44 +117,72 @@ type HallOfShame = {
 The server owns the game state (#11 `feat/server-round-state-machine`). Screens only show what the server says; they never decide on their own when to move on.
 
 ```
-lobby ─► intro ─► describing ─► processing ─► reveal ─► scoreboard ─┐
-            ▲                                                         │
-            └─────────────── next round (until all rounds played) ◄───┘
-                                                                      │
-                                                      game_over (podium) ─► hall_of_shame
+lobby ─► round_start ─► intro ─► describing ─► processing ─► reveal ─► scoreboard ─┐
+              ▲            ▲                                                         │
+              │            └──────────── next turn in this round ◄──────────────────┤
+              └──────────────────────── round over: next round ◄────────────────────┘
+                                         last turn of the last round: game_over (podium) ─► hall_of_shame
 ```
+
+**Rounds and turns:** a game is **2 rounds**. In each round, every player describes once (one **turn** each), so a game has 2 × players turns. Round 1 goes in join order. Round 2 goes **lowest score first**, so the leader describes last (ties keep join order). Every point earned in round 2 is worth **1.5×**.
+
+**Guessing:** while someone describes, everyone else can type **one** guess at what the secret image shows. Guessing opens when `describing` starts and closes `guessMs` (25s) later, or as soon as every connected player but the describer has guessed. It can stay open into `processing`. The reveal waits for both the AI's drawing and the guess scores.
 
 | Phase | Host screen (`/host`) | Describer's phone | Everyone else's phone |
 |---|---|---|---|
 | `lobby` | Room code, QR, player list | Waiting | Waiting |
-| `intro` | "Next up: Sam" *(not built yet)* | Waiting | Waiting |
-| `describing` | "Sam is describing…" + timer *(not built yet)* | `DescribeScreen`: image, banned words, mic | Waiting |
-| `processing` | "The AI is drawing…" *(not built yet)* | "Sending to the AI…" | Waiting |
+| `round_start` | "Round 2 · Points x1.5!", who leads and by how much | Waiting | Waiting |
+| `intro` | "Next up: Sam" | Waiting | "Get ready to guess" |
+| `describing` | "Sam is describing…" + timer, how many guesses are locked in | `DescribeScreen`: image, banned words, mic | `GuessScreen`: one guess, then "Locked in" |
+| `processing` | "The AI is drawing…" | "Sending to the AI…" | `GuessScreen` until guessing closes |
 | `reveal` | `RevealScreen` | "Sent! Look at the big screen" | Waiting |
 | `scoreboard` | `Scoreboard` (ranked list) | Waiting | Waiting |
 | `game_over` | `Scoreboard` with `final` (podium) | Waiting | Waiting |
 | `hall_of_shame` | `HallOfShame` | Waiting | Waiting |
 
-**Rounds:** each player describes once per game, in join order, so a game has as many rounds as players. (See [open questions](#7-open-questions) if we want something else.)
-
 **Timing (server-controlled):**
 
 | Phase | Lasts | Ends when |
 |---|---|---|
+| `round_start` | 4s | timer or host sends `next` |
 | `intro` | 3s | timer |
 | `describing` | 20s | `/submit` arrives, or timer runs out (then 0 points, caption about the silence) |
-| `processing` | as long as Gemini takes | result is ready |
+| `processing` | as long as Gemini takes, and until guessing closes | drawing and guess scores are both ready |
 | `reveal` | ~8s | timer (the reveal animation takes ~5s) or host sends `next` |
 | `scoreboard` | ~6s | timer or host sends `next` |
 | `game_over` | ~10s | timer or host sends `next`, then `hall_of_shame` (stays until the host starts again) |
 
 All of these live in [`server/src/config.ts`](../server/src/config.ts).
 
+**Points** (every number lives in `config.ts`):
+
+- **Describer**, per turn, before the multiplier (a perfect turn is 1000, or 1500 in round 2):
+  - **Accuracy:** `700 × score / 100`, from the AI's match score.
+  - **Clarity:** `200 × average guess accuracy / 100`. If nobody guessed, the match score is used instead, so a quiet room doesn't cost the describer.
+  - **Speed:** `100 × share of the 20s left` when they first sent it. Only counts when the match score is **40 or more**.
+  - **Banned words:** −100 for each banned word said (each counts once).
+  - `total = round(max(0, accuracy + clarity + speed − bannedPenalty) × multiplier)`. A timed-out turn earns 0.
+- **Guessers**, per guess: `round(max × accuracy/100 × speed/100)`. `speed` is 100 for an instant guess and drops evenly to 70 at the end of the 25s window. The AI scores `accuracy` 0–100 against the target's description (`prompt` in `targets.json`). If that call fails, shared words decide.
+- **What one guess is worth (`max`)** depends on the number of players when the game started, so guessing stays about **40%** of a perfect game in any room size. `max = min(400, 666.7 / (players − 1)) × multiplier`, rounded to the nearest 5:
+
+  | Players | Round 1 | Round 2 |
+  |---|---|---|
+  | 2 | 400 | 600 |
+  | 3 | 335 | 500 |
+  | 4 | 220 | 335 |
+  | 6 | 135 | 200 |
+  | 8 | 95 | 145 |
+
+  The cap of 400 keeps one guess from counting almost as much as describing in a 2-player game.
+- **Ranking:** highest `score` wins. Ties go to more `finalRoundPoints`, then more `spectatorPoints`.
+
 **Server behavior worth knowing:**
-- After the **last** round's reveal, the server goes straight to `game_over` (no plain scoreboard first; the podium replaces it).
+- After the **last** turn's reveal, the server goes straight to `game_over` (no plain scoreboard first; the podium replaces it).
 - `/submit` is accepted until `endsAt` plus a 3s grace, so an upload that started before the buzzer still counts.
-- A **timed-out** round still sends `round_result`: `transcript: ""`, `score: 0`, a placeholder `imageUrl` ("*crickets*"), and a caption about the silence.
-- **Points** for a round = `score` − 10 per banned word said (each word counts once), never below 0. Only the describer earns points. `SubmitResult.score` is still the raw match score.
+- A **timed-out** turn still sends `round_result`: `transcript: ""`, `score: 0`, a placeholder `imageUrl` ("*crickets*"), a caption about the silence, and the guesses (which still score).
+- `SubmitResult.score` is always the raw 0–100 match score; points are in `breakdown`.
+- If the AI fails and the describer gets their turn back, guesses already locked in stay, and guessing stays open at least as long as the new describing deadline.
+- A guesser who **refreshes** and rejoins mid-turn gets `describing` again (to reopen the guess box) and `guess_locked` if they already guessed.
 - If a **describer disconnects** before submitting, they have 5s to rejoin (see `join`) before their turn is skipped.
 - If the **host disconnects**, the room ends and everyone gets `error`.
 - The host can send `start_game` again from `game_over` or `hall_of_shame` to **play again** (scores reset, Hall of Shame keeps the whole night).
@@ -139,13 +199,14 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 |---|---|---|
 | `create_room` | *(none)* | Host page opens |
 | `start_game` | *(none)* | Host clicks Start (needs 2+ players) |
-| `next` | *(none)* | Optional: host skips ahead from `reveal`, `scoreboard`, or `game_over` |
+| `next` | *(none)* | Optional: host skips ahead from `round_start`, `reveal`, `scoreboard`, or `game_over` |
 
 ### Player → server
 
 | Event | Payload | When |
 |---|---|---|
 | `join` | `{ code: string, name: string, playerId?: string }` | Player taps Join. To **rejoin after a refresh**, send the `player.id` from the earlier `joined` (e.g. saved in `localStorage`); the player keeps their score and, if it's their turn, gets `your_turn` again. |
+| `guess` | `{ text: string }` | Everyone but the describer, once per turn, while guessing is open. 1–60 characters (extra spaces are trimmed). The server answers that player with `guess_locked` or `guess_error`. |
 
 ### Server → host only
 
@@ -160,24 +221,28 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 | `joined` | `{ player: Player, code: string }` | the `FAKE` `setMe(...)` in `PlayerJoin.join()` |
 | `join_error` | `{ reason: "room_not_found" \| "name_taken" \| "game_started" \| "room_full" \| "invalid_name" }` (`invalid_name`: blank or over 16 characters) | *(join form needs an error message)* |
 | `your_turn` | `{ target: Target, endsAt: number }` | `mockTarget` and the "Pretend it's my turn" button |
+| `guess_locked` | `{ text: string, speed: number }` | The guess was taken. `speed` is how much of its value it kept (70–100). |
+| `guess_error` | `{ reason: "not_now" \| "describer" \| "already_guessed" \| "invalid_guess" }` | `not_now`: guessing isn't open. `invalid_guess`: blank or over 60 characters. |
 
 ### Server → everyone in the room
 
 | Event | Payload | Replaces in the web app |
 |---|---|---|
 | `players` | `{ players: Player[] }` | the fake `setInterval` adding `mockPlayers` on `/host`. Sent on every join/leave. |
-| `round_intro` | `{ round: number, totalRounds: number, describer: Player }` | *(intro screen not built yet)* |
-| `describing` | `{ describer: Player, endsAt: number }` | *(host "describing" screen not built yet)* |
+| `round_start` | `{ round: number, totalRounds: number, multiplier: number, leader: Player \| null, gap: number }` | Start of each round. `leader` is null when nobody leads (round 1, or a tie for first); `gap` is their lead over second place. |
+| `turn_intro` | `{ round: number, totalRounds: number, turn: number, turnsInRound: number, multiplier: number, describer: Player }` | "Next up: Sam" before every turn. `turn` counts from 1 within the round. |
+| `describing` | `{ describer: Player, endsAt: number, guessEndsAt: number }` | Describing and guessing start. `endsAt` is the describer's deadline, `guessEndsAt` when guessing closes (at the latest). Sent again if the AI fails and the describer gets more time. |
+| `guesses_locked` | `{ playerIds: string[], open: boolean }` | After every guess (who has guessed, never what), and once more with `open: false` when guessing closes. |
 | `banned_buzz` | `{ playerId: string, word: string }` | → `playBuzzer()` on the host |
 | `processing` | `{ describer: Player }` | *(host "drawing" screen not built yet)* |
-| `round_result` | `{ playerName: string, result: SubmitResult }` | `mockResult` / `mockRefusedResult` on `/host` |
+| `round_result` | `{ playerName: string, result: SubmitResult, breakdown: PrompterBreakdown, guesses: GuessResult[] }` | `mockResult` / `mockRefusedResult` on `/host`. Sent once the drawing and the guess scores are both ready. |
 | `scoreboard` | `{ standings: Standing[] }` | `mockStandings` (`final={false}`) |
-| `game_over` | `{ standings: Standing[] }` | `mockStandings` (`final={true}`) |
+| `game_over` | `{ standings: Standing[], awards: Award[] }` | `mockStandings` (`final={true}`). Awards with nobody to give them to are left out. |
 | `hall_of_shame` | `{ data: HallOfShame }` | `mockHallOfShame` |
 | `error` | `{ message: string }` | *(generic toast, not built yet)* |
 
 Notes:
-- `standings` can arrive in any order; the scoreboard sorts them.
+- `standings` arrive sorted with `rank` set; the scoreboard still sorts by `rank`, so mock data works too.
 - The describer gets `your_turn` **and** everyone gets `describing`. Only `your_turn` contains the target image, so other phones can't peek.
 - `banned_buzz` is sent while processing the transcript (the server does the real banned-word check, #12). The phone's typed-mode warning is a convenience only.
 
@@ -185,7 +250,7 @@ Notes:
 
 ## 4. POST /submit
 
-Called by the describer's phone during `describing`. The server transcribes (if audio), checks banned words, generates the image, scores it, writes the caption, logs the round, broadcasts `round_result`, **and** returns the same result to the phone.
+Called by the describer's phone during `describing`. The server transcribes (if audio), checks banned words, generates the image, scores it, writes the caption, and returns the `SubmitResult` to the phone. Once guessing has closed too, it logs the turn and broadcasts `round_result` with the same `result` plus the points. So the phone's response can arrive **before** `round_result`.
 
 **Request:** `multipart/form-data` (built with `FormData` in [`web/lib/submit.ts`](../web/lib/submit.ts)).
 
@@ -255,11 +320,14 @@ Suggest adding both columns. `worstWords` can be computed from `transcript` + `s
 
 ## 7. Open questions
 
-Decide these together, then update this file. The server picked a default for 1–4 so it could run; each is one line in [`server/src/config.ts`](../server/src/config.ts) or a small change.
+Decide these together, then update this file.
 
-1. **Rounds per game:** one turn per player, or a fixed number like 5 with turns cycling? *Server default: one turn per player (`roundsPerPlayer: 1`).*
-2. **Scoring:** is a round's points just the 0–100 match score? Penalty for a banned word (e.g. −10 per buzz)? *Server default: −10 per banned word (`bannedWordPenalty`).*
-3. **Who gets points:** only the describer, or does everyone get something? *Server default: only the describer.*
-4. **Reconnects:** if a phone refreshes, should it rejoin as the same player? (Would need the phone to store `player.id` and send it with `join`.) *Server: supported (optional `playerId` on `join`); the phone side isn't built yet.*
-5. **Awards (#21):** "Closest" and "Most Wrong Masterpiece". Send them with `game_over` as `awards: { title: string, playerName: string, imageUrl: string }[]`?
-6. **Storybook (#37):** shape of the storybook data, to be added before the storybook page (#38) is built.
+Decided (see [Game flow](#2-game-flow)):
+- **Rounds per game:** 2 rounds, everyone describes once per round; round 2 is lowest score first and worth 1.5×.
+- **Scoring:** describer points out of 1000 (accuracy, clarity, speed, −100 per banned word); guessers earn points for accuracy and speed.
+- **Who gets points:** everyone. Guessing is about 40% of a perfect game.
+- **Reconnects:** a refreshed phone rejoins as the same player (`playerId` on `join`, saved by the phone).
+- **Awards (#21):** sent with `game_over` as `awards: Award[]`.
+
+Still open:
+1. **Storybook (#37):** shape of the storybook data, to be added before the storybook page (#38) is built.

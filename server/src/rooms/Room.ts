@@ -1,9 +1,20 @@
 import type { Ai } from "../ai/index.js";
+import { wordMatchScore } from "../ai/wordMatch.js";
 import type { GameIo, GameSocket } from "../app.js";
 import { findBannedWords } from "../bannedWords.js";
 import type { GameConfig } from "../config.js";
-import { pickTarget, type TargetEntry } from "../targets.js";
-import type { Description, JoinErrorReason, Player, Standing, SubmitResult, Target } from "../types.js";
+import { guessPoints, maxGuessPoints, noPoints, prompterPoints, rankStandings, speedPercent } from "../scoring.js";
+import { pickTarget, publicTarget, type TargetEntry } from "../targets.js";
+import type {
+  Award,
+  Description,
+  GuessErrorReason,
+  GuessResult,
+  JoinErrorReason,
+  Player,
+  Standing,
+  SubmitResult,
+} from "../types.js";
 import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
 
 /*
@@ -11,12 +22,19 @@ import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
   The server owns the game: this class decides when every phase starts and ends,
   and tells the screens with socket events (see docs/data-contract.md, "Game flow").
 
-  lobby → intro → describing → processing → reveal → scoreboard → (next round's intro)
-                                                   ↘ last round: game_over → hall_of_shame
+  A game is a few rounds (config.roundMultipliers); in each round everyone describes once.
+
+  lobby → round_start → intro → describing → processing → reveal → scoreboard → (next turn's intro)
+                                                                   ↘ end of a round: next round_start
+                                                                   ↘ last turn of the game: game_over → hall_of_shame
+
+  While someone describes, everyone else can type one guess, until config.guessMs after describing
+  started (or until everyone has guessed). The reveal waits for both the drawing and the guess scores.
 */
 
 export type Phase =
   | "lobby"
+  | "round_start"
   | "intro"
   | "describing"
   | "processing"
@@ -26,11 +44,37 @@ export type Phase =
   | "hall_of_shame";
 
 // Phases the host's "next" button can cut short.
-const skippable: Phase[] = ["reveal", "scoreboard", "game_over"];
+const skippable: Phase[] = ["round_start", "reveal", "scoreboard", "game_over"];
 
-type PlayerState = Standing & {
+type PlayerState = Player & {
   socketId: string | null; // null while disconnected
+  lastTurn: number;
+  prompterPoints: number;
+  spectatorPoints: number;
+  finalRoundPoints: number;
 };
+
+type Guess = { playerId: string; text: string; speed: number };
+
+// Everything about the turn being played. A fresh object every turn, so nothing leaks into the next one.
+type Turn = {
+  round: number; // 1-based
+  describerId: string;
+  target: TargetEntry;
+  startedAt: number; // when describing started
+  endsAt: number; // the describer's deadline (moves later if the AI fails)
+  firstSubmitAt?: number; // for the speed bonus, so an AI failure doesn't change it
+  guessEndsAt: number;
+  guessesOpen: boolean;
+  guessTimer?: NodeJS.Timeout;
+  guesses: Map<string, Guess>; // by player id, in the order they came in
+  accuracies?: Map<string, number>; // set once the guesses are scored
+  drawing?: { result: SubmitResult; bannedHits: number; described: boolean }; // set once the AI is done
+  finished: boolean;
+};
+
+// One finished turn of this game, for the awards.
+type TurnRecord = { playerName: string; score: number; imageUrl: string; drawn: boolean };
 
 // Thrown by submit(); the HTTP route turns it into a status code.
 export class SubmitError extends Error {
@@ -52,15 +96,18 @@ export type RoomDeps = {
 export class Room {
   phase: Phase = "lobby";
 
-  // Map keeps insertion order, which is the join order (and the turn order).
+  // Map keeps insertion order, which is the join order (round 1's turn order).
   private players = new Map<string, PlayerState>();
-  private turnOrder: string[] = [];
-  private roundIndex = -1;
+  // How many played when the game started. Sets what a guess is worth, so it can't change mid-game.
+  private playerCount = 0;
+  private roundIndex = -1; // 0-based
+  private roundOrder: string[] = []; // who describes this round, in order
+  private turnIndex = -1; // 0-based, within the round
   private describerId: string | null = null;
-  private target: Target | null = null;
-  private endsAt = 0;
+  private turn: Turn | null = null;
+  private turnLog: TurnRecord[] = [];
   private usedTargets = new Set<string>();
-  // Every round played in this room tonight, across games, for the Hall of Shame.
+  // Every turn played in this room tonight, across games, for the Hall of Shame.
   private rounds: RoundRecord[] = [];
   private timer: NodeJS.Timeout | undefined;
   private pending: (() => void) | undefined; // what the timer will do; "next" runs it early
@@ -80,9 +127,7 @@ export class Room {
     if (existing) {
       existing.socketId = socket.id;
       this.attach(socket, existing);
-      if (this.phase === "describing" && this.describerId === existing.id && this.target) {
-        socket.emit("your_turn", { target: this.target, endsAt: this.endsAt });
-      }
+      this.catchUp(socket, existing.id);
       return null;
     }
 
@@ -93,7 +138,16 @@ export class Room {
     if (taken) return "name_taken";
     if (this.players.size >= this.deps.config.maxPlayers) return "room_full";
 
-    const player: PlayerState = { id: crypto.randomUUID(), name, score: 0, lastRound: 0, socketId: socket.id };
+    const player: PlayerState = {
+      id: crypto.randomUUID(),
+      name,
+      score: 0,
+      lastTurn: 0,
+      prompterPoints: 0,
+      spectatorPoints: 0,
+      finalRoundPoints: 0,
+      socketId: socket.id,
+    };
     this.players.set(player.id, player);
     this.attach(socket, player);
     return null;
@@ -104,6 +158,23 @@ export class Room {
     void socket.join(this.code);
     socket.emit("joined", { player: publicPlayer(player), code: this.code });
     this.broadcastPlayers();
+  }
+
+  // A rejoining phone gets back what it missed: the describer their target, a guesser the guess box.
+  private catchUp(socket: GameSocket, playerId: string) {
+    const turn = this.turn;
+    if (!turn) return;
+    if (playerId === turn.describerId) {
+      if (this.phase === "describing") {
+        socket.emit("your_turn", { target: publicTarget(turn.target), endsAt: turn.endsAt });
+      }
+      return;
+    }
+    if (!turn.guessesOpen) return;
+    const describer = this.describer();
+    socket.emit("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
+    const guess = turn.guesses.get(playerId);
+    if (guess) socket.emit("guess_locked", { text: guess.text, speed: guess.speed });
   }
 
   // A player's socket disconnected.
@@ -117,14 +188,19 @@ export class Room {
     } else {
       player.socketId = null;
       // If it's their turn and they haven't submitted, give them a moment to come back, then skip them.
-      // (If they already submitted, the round finishes without them.)
+      // (If they already submitted, the turn finishes without them.)
       if (this.describerId === playerId && this.awaitingDescriber()) {
-        const round = this.roundIndex;
+        const turnIndex = this.turnIndex;
+        const roundIndex = this.roundIndex;
         clearTimeout(this.skipTimer);
         this.skipTimer = setTimeout(() => {
-          if (this.closed || this.roundIndex !== round || player.socketId || !this.awaitingDescriber()) return;
-          this.nextRound();
+          if (this.closed || this.turnIndex !== turnIndex || this.roundIndex !== roundIndex) return;
+          if (player.socketId || !this.awaitingDescriber()) return;
+          this.nextTurn();
         }, this.deps.config.reconnectGraceMs);
+      } else {
+        // Everyone still here may have guessed already.
+        this.closeGuessesIfAllIn();
       }
     }
     this.broadcastPlayers();
@@ -134,6 +210,7 @@ export class Room {
   close() {
     this.closed = true;
     this.clearTimer();
+    this.clearTurn();
     clearTimeout(this.skipTimer);
     this.deps.io.to(this.code).emit("error", { message: "The host left, so the game ended." });
   }
@@ -147,16 +224,14 @@ export class Room {
     // Playing again: drop anyone who left, reset scores.
     for (const [id, p] of this.players) {
       if (!p.socketId) this.players.delete(id);
-      p.score = 0;
-      p.lastRound = 0;
+      Object.assign(p, { score: 0, lastTurn: 0, prompterPoints: 0, spectatorPoints: 0, finalRoundPoints: 0 });
     }
-    const ids = [...this.players.keys()];
-    if (ids.length < this.deps.config.minPlayers) {
+    if (this.players.size < this.deps.config.minPlayers) {
       return `Need at least ${this.deps.config.minPlayers} players to start.`;
     }
 
-    this.turnOrder = [];
-    for (let i = 0; i < this.deps.config.roundsPerPlayer; i++) this.turnOrder.push(...ids);
+    this.playerCount = this.players.size;
+    this.turnLog = [];
     this.roundIndex = -1;
     this.nextRound();
     return null;
@@ -169,25 +244,56 @@ export class Room {
     run();
   }
 
-  // ---------- The round loop ----------
+  // ---------- Rounds and turns ----------
 
   private nextRound(): void {
     this.clearTimer();
-    clearTimeout(this.skipTimer);
     this.roundIndex++;
-    if (this.roundIndex >= this.turnOrder.length) return this.gameOver();
+    const { roundMultipliers } = this.deps.config;
+    if (this.roundIndex >= roundMultipliers.length) return this.gameOver();
 
-    const describer = this.players.get(this.turnOrder[this.roundIndex]!);
-    // Skip players who left.
-    if (!describer?.socketId) return this.nextRound();
+    const joinOrder = [...this.players.keys()];
+    // Round 1 goes in join order. After that, lowest score first, so the leader describes last
+    // and everyone behind knows what they need. (sort is stable, so ties keep join order.)
+    this.roundOrder =
+      this.roundIndex === 0
+        ? joinOrder
+        : [...joinOrder].sort((a, b) => this.players.get(a)!.score - this.players.get(b)!.score);
+    this.turnIndex = -1;
 
-    for (const p of this.players.values()) p.lastRound = 0;
-    this.describerId = describer.id;
-    this.target = null;
-    this.phase = "intro";
-    this.toRoom("round_intro", {
+    const [first, second] = this.standings();
+    const gap = first ? first.score - (second?.score ?? 0) : 0;
+    this.phase = "round_start";
+    this.toRoom("round_start", {
       round: this.roundIndex + 1,
-      totalRounds: this.turnOrder.length,
+      totalRounds: roundMultipliers.length,
+      multiplier: this.multiplier(),
+      leader: first && gap > 0 ? publicPlayer(first) : null,
+      gap,
+    });
+    this.after(this.deps.config.roundIntroMs, () => this.nextTurn());
+  }
+
+  private nextTurn(): void {
+    this.clearTimer();
+    this.clearTurn();
+    clearTimeout(this.skipTimer);
+    this.turnIndex++;
+    if (this.turnIndex >= this.roundOrder.length) return this.nextRound();
+
+    const describer = this.players.get(this.roundOrder[this.turnIndex]!);
+    // Skip players who left.
+    if (!describer?.socketId) return this.nextTurn();
+
+    for (const p of this.players.values()) p.lastTurn = 0;
+    this.describerId = describer.id;
+    this.phase = "intro";
+    this.toRoom("turn_intro", {
+      round: this.roundIndex + 1,
+      totalRounds: this.deps.config.roundMultipliers.length,
+      turn: this.turnIndex + 1,
+      turnsInRound: this.roundOrder.length,
+      multiplier: this.multiplier(),
       describer: publicPlayer(describer),
     });
     this.after(this.deps.config.introMs, () => this.startDescribing());
@@ -196,27 +302,99 @@ export class Room {
   private startDescribing() {
     const describer = this.describer();
     const { config } = this.deps;
-    this.target = pickTarget(this.deps.targets, this.usedTargets);
-    this.endsAt = Date.now() + config.describeMs;
+    const now = Date.now();
+    const turn: Turn = {
+      round: this.roundIndex + 1,
+      describerId: describer.id,
+      target: pickTarget(this.deps.targets, this.usedTargets),
+      startedAt: now,
+      endsAt: now + config.describeMs,
+      guessEndsAt: now + config.guessMs,
+      guessesOpen: true,
+      guesses: new Map(),
+      finished: false,
+    };
+    this.turn = turn;
     this.phase = "describing";
 
     // Only the describer's phone gets the target, so nobody else can peek.
     if (describer.socketId) {
-      this.deps.io.to(describer.socketId).emit("your_turn", { target: this.target, endsAt: this.endsAt });
+      this.deps.io.to(describer.socketId).emit("your_turn", { target: publicTarget(turn.target), endsAt: turn.endsAt });
     }
-    this.toRoom("describing", { describer: publicPlayer(describer), endsAt: this.endsAt });
+    this.toRoom("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
+    turn.guessTimer = setTimeout(() => void this.closeGuesses(turn), config.guessMs);
     this.after(config.describeMs + config.submitGraceMs, () => this.timeUp());
+    this.closeGuessesIfAllIn(); // e.g. nobody else is connected
   }
 
-  // Called by POST /submit. Resolves with the same result everyone sees on the big screen.
+  // ---------- Guessing ----------
+
+  // Called by the "guess" socket event. Returns why the guess wasn't taken, or null.
+  guess(playerId: string, rawText: string): GuessErrorReason | null {
+    const turn = this.turn;
+    if (!turn?.guessesOpen || !this.players.has(playerId)) return "not_now";
+    if (playerId === turn.describerId) return "describer";
+    if (turn.guesses.has(playerId)) return "already_guessed";
+    const text = rawText.trim().replace(/\s+/g, " ");
+    if (text.length < 1 || text.length > this.deps.config.maxGuessLength) return "invalid_guess";
+
+    const speed = speedPercent(this.deps.config, Date.now() - turn.startedAt);
+    turn.guesses.set(playerId, { playerId, text, speed });
+    const socketId = this.players.get(playerId)!.socketId;
+    if (socketId) this.deps.io.to(socketId).emit("guess_locked", { text, speed });
+    // The host lights up who has guessed, never what they guessed.
+    this.toRoom("guesses_locked", { playerIds: [...turn.guesses.keys()], open: true });
+    this.closeGuessesIfAllIn();
+    return null;
+  }
+
+  // Close guessing early once everyone still connected (except the describer) has guessed.
+  private closeGuessesIfAllIn() {
+    const turn = this.turn;
+    if (!turn?.guessesOpen) return;
+    const waitingOn = [...this.players.values()].filter(
+      (p) => p.socketId && p.id !== turn.describerId && !turn.guesses.has(p.id),
+    );
+    if (waitingOn.length === 0) void this.closeGuesses(turn);
+  }
+
+  // Stops taking guesses and scores them all in one AI call. If the AI can't, shared words decide.
+  private async closeGuesses(turn: Turn) {
+    if (!turn.guessesOpen) return;
+    turn.guessesOpen = false;
+    clearTimeout(turn.guessTimer);
+    this.toRoom("guesses_locked", { playerIds: [...turn.guesses.keys()], open: false });
+
+    const guesses = [...turn.guesses.values()];
+    const texts = guesses.map((g) => g.text);
+    let scores: number[];
+    try {
+      scores = await this.deps.ai.scoreGuesses(turn.target, texts);
+      if (scores.length !== texts.length) throw new Error(`got ${scores.length} scores for ${texts.length} guesses`);
+    } catch (err) {
+      console.error(`[${this.code}] Scoring guesses failed, using word matching:`, err);
+      scores = texts.map((text) => wordMatchScore(turn.target.prompt, text));
+    }
+    if (this.closed || this.turn !== turn) return; // the turn was skipped meanwhile
+
+    turn.accuracies = new Map(guesses.map((g, i) => [g.playerId, clampPercent(scores[i]!)]));
+    this.finishIfReady(turn);
+  }
+
+  // ---------- Describing ----------
+
+  // Called by POST /submit. Resolves with the AI's result as soon as it's ready;
+  // everyone sees it (with the points) in round_result once the guesses are scored too.
   async submit(playerId: string, description: Description): Promise<SubmitResult> {
     const { config, ai } = this.deps;
-    if (this.phase !== "describing") throw new SubmitError(403, "Nobody is describing right now.");
-    if (playerId !== this.describerId) throw new SubmitError(403, "It's not your turn.");
-    if (Date.now() > this.endsAt + config.submitGraceMs) throw new SubmitError(403, "Time's up.");
+    const turn = this.turn;
+    if (this.phase !== "describing" || !turn) throw new SubmitError(403, "Nobody is describing right now.");
+    if (playerId !== turn.describerId) throw new SubmitError(403, "It's not your turn.");
+    if (Date.now() > turn.endsAt + config.submitGraceMs) throw new SubmitError(403, "Time's up.");
 
     const describer = this.describer();
-    const target = this.target!;
+    const target = turn.target;
+    turn.firstSubmitAt ??= Date.now();
     this.clearTimer();
     this.phase = "processing";
     this.toRoom("processing", { describer: publicPlayer(describer) });
@@ -229,56 +407,106 @@ export class Room {
       bannedSaid = findBannedWords(transcript, target.bannedWords);
       if (this.closed) throw new SubmitError(404, "The room closed.");
       for (const word of bannedSaid) this.toRoom("banned_buzz", { playerId, word });
-      drawing = await ai.draw(transcript, target);
+      drawing = await ai.draw(transcript, publicTarget(target));
     } catch (err) {
       if (err instanceof SubmitError || this.closed) throw err;
       console.error(`[${this.code}] AI pipeline failed:`, err);
-      this.retryDescribing();
+      this.retryDescribing(turn);
       throw new SubmitError(502, "The AI had a problem. Try again!");
     }
-    if (this.closed) throw new SubmitError(404, "The room closed.");
+    if (this.closed || this.turn !== turn) throw new SubmitError(404, "The room closed.");
 
-    const score = drawing.refused ? 0 : Math.max(0, Math.min(100, Math.round(drawing.score)));
+    const score = drawing.refused ? 0 : clampPercent(drawing.score);
     const result: SubmitResult = { transcript, targetImageUrl: target.imageUrl, ...drawing, score };
-    const points = Math.max(0, score - config.bannedWordPenalty * bannedSaid.length);
-    this.finishRound(result, bannedSaid.length, points);
+    turn.drawing = { result, bannedHits: bannedSaid.length, described: true };
+    this.finishIfReady(turn);
     return result;
   }
 
   // The AI failed: give the describer back their turn, with enough time to try again.
-  private retryDescribing() {
+  // Guesses stay, and anyone who hasn't guessed gets at least as long as the describer.
+  private retryDescribing(turn: Turn) {
     const { config } = this.deps;
     const describer = this.describer();
-    this.endsAt = Math.max(this.endsAt, Date.now() + config.retryMs);
-    this.phase = "describing";
-    if (describer.socketId && this.target) {
-      this.deps.io.to(describer.socketId).emit("your_turn", { target: this.target, endsAt: this.endsAt });
+    turn.endsAt = Math.max(turn.endsAt, Date.now() + config.retryMs);
+    if (turn.guessesOpen && turn.guessEndsAt < turn.endsAt) {
+      turn.guessEndsAt = turn.endsAt;
+      clearTimeout(turn.guessTimer);
+      turn.guessTimer = setTimeout(() => void this.closeGuesses(turn), turn.guessEndsAt - Date.now());
     }
-    this.toRoom("describing", { describer: publicPlayer(describer), endsAt: this.endsAt });
-    this.after(this.endsAt - Date.now() + config.submitGraceMs, () => this.timeUp());
+    this.phase = "describing";
+    if (describer.socketId) {
+      this.deps.io.to(describer.socketId).emit("your_turn", { target: publicTarget(turn.target), endsAt: turn.endsAt });
+    }
+    this.toRoom("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
+    this.after(turn.endsAt - Date.now() + config.submitGraceMs, () => this.timeUp());
   }
 
-  // Nobody submitted in time.
+  // The describer didn't submit in time. Guessers still get scored.
   private timeUp() {
-    this.finishRound(
-      {
+    const turn = this.turn;
+    if (!turn) return;
+    turn.drawing = {
+      result: {
         transcript: "",
         imageUrl: "https://placehold.co/512x512/png?text=*crickets*",
-        targetImageUrl: this.target?.imageUrl ?? "",
+        targetImageUrl: turn.target.imageUrl,
         score: 0,
         gotRight: [],
         gotWrong: [],
         caption: "Total silence. The AI drew exactly what you said.",
       },
-      0,
-      0,
-    );
+      bannedHits: 0,
+      described: false,
+    };
+    this.phase = "processing";
+    if (!turn.accuracies) this.toRoom("processing", { describer: publicPlayer(this.describer()) });
+    this.finishIfReady(turn);
   }
 
-  private finishRound(result: SubmitResult, bannedHits: number, points: number) {
+  // The reveal needs both the drawing and the guess scores, whichever comes last.
+  private finishIfReady(turn: Turn) {
+    if (turn.finished || !turn.drawing || !turn.accuracies || this.turn !== turn) return;
+    turn.finished = true;
+    this.finishTurn(turn, turn.drawing, turn.accuracies);
+  }
+
+  private finishTurn(turn: Turn, drawing: NonNullable<Turn["drawing"]>, accuracies: Map<string, number>) {
+    const { config } = this.deps;
+    const multiplier = this.multiplier();
+    const finalRound = this.roundIndex === config.roundMultipliers.length - 1;
     const describer = this.describer();
-    describer.score += points;
-    describer.lastRound = points;
+    const { result, bannedHits, described } = drawing;
+
+    // Guessers first: the describer's clarity bonus is how well they did.
+    const maxPoints = maxGuessPoints(config, this.playerCount, multiplier);
+    const guesses: GuessResult[] = [...turn.guesses.values()].map(({ playerId, text, speed }) => {
+      const accuracy = accuracies.get(playerId) ?? 0;
+      const player = this.players.get(playerId)!;
+      return { playerId, playerName: player.name, text, accuracy, speed, points: guessPoints(maxPoints, accuracy, speed) };
+    });
+    const timeLeft = (turn.startedAt + config.describeMs - (turn.firstSubmitAt ?? Infinity)) / config.describeMs;
+    const breakdown = described
+      ? prompterPoints(config, {
+          score: result.score,
+          guessAccuracies: guesses.map((g) => g.accuracy),
+          timeLeft,
+          bannedWords: bannedHits,
+          multiplier,
+        })
+      : noPoints(multiplier);
+
+    const award = (player: PlayerState, points: number, kind: "prompterPoints" | "spectatorPoints") => {
+      player.score += points;
+      player[kind] += points;
+      player.lastTurn = points;
+      if (finalRound) player.finalRoundPoints += points;
+    };
+    award(describer, breakdown.total, "prompterPoints");
+    for (const g of guesses) award(this.players.get(g.playerId)!, g.points, "spectatorPoints");
+
+    const drawn = described && !result.refused;
+    this.turnLog.push({ playerName: describer.name, score: result.score, imageUrl: result.imageUrl, drawn });
     this.rounds.push({
       playerName: describer.name,
       transcript: result.transcript,
@@ -289,22 +517,23 @@ export class Room {
     });
 
     this.phase = "reveal";
-    this.toRoom("round_result", { playerName: describer.name, result });
-    const isLast = this.roundIndex >= this.turnOrder.length - 1;
-    this.after(this.deps.config.revealMs, () => (isLast ? this.gameOver() : this.showScoreboard()));
+    this.toRoom("round_result", { playerName: describer.name, result, breakdown, guesses });
+    const isLast = finalRound && this.turnIndex >= this.roundOrder.length - 1;
+    this.after(config.revealMs, () => (isLast ? this.gameOver() : this.showScoreboard()));
   }
 
   private showScoreboard() {
     this.phase = "scoreboard";
     this.toRoom("scoreboard", { standings: this.standings() });
-    this.after(this.deps.config.scoreboardMs, () => this.nextRound());
+    this.after(this.deps.config.scoreboardMs, () => this.nextTurn());
   }
 
   private gameOver() {
     this.clearTimer();
+    this.clearTurn();
     this.describerId = null;
     this.phase = "game_over";
-    this.toRoom("game_over", { standings: this.standings() });
+    this.toRoom("game_over", { standings: this.standings(), awards: this.awards() });
     this.after(this.deps.config.gameOverMs, () => this.showHallOfShame());
   }
 
@@ -313,7 +542,29 @@ export class Room {
     this.toRoom("hall_of_shame", { data: buildHallOfShame(this.rounds) });
   }
 
+  // The best and worst drawings of the game, and the best guesser. Skipped when nobody qualifies.
+  private awards(): Award[] {
+    const awards: Award[] = [];
+    const drawn = this.turnLog.filter((t) => t.drawn);
+    const best = drawn.reduce<TurnRecord | undefined>((top, t) => (!top || t.score > top.score ? t : top), undefined);
+    const worst = drawn.reduce<TurnRecord | undefined>((low, t) => (!low || t.score < low.score ? t : low), undefined);
+    if (best) awards.push({ title: "Closest Drawing", playerName: best.playerName, imageUrl: best.imageUrl });
+    if (worst && worst !== best) {
+      awards.push({ title: "Most Wrong Masterpiece", playerName: worst.playerName, imageUrl: worst.imageUrl });
+    }
+    const guesser = [...this.players.values()].reduce<PlayerState | undefined>(
+      (top, p) => (p.spectatorPoints > (top?.spectatorPoints ?? 0) ? p : top),
+      undefined,
+    );
+    if (guesser) awards.push({ title: "Sharpest Guesser", playerName: guesser.name, imageUrl: "" });
+    return awards;
+  }
+
   // ---------- Helpers ----------
+
+  private multiplier(): number {
+    return this.deps.config.roundMultipliers[this.roundIndex] ?? 1;
+  }
 
   private awaitingDescriber(): boolean {
     return this.phase === "intro" || this.phase === "describing";
@@ -325,8 +576,19 @@ export class Room {
     return p;
   }
 
+  // Sorted best first, ties broken (see rankStandings).
   private standings(): Standing[] {
-    return [...this.players.values()].map(({ id, name, score, lastRound }) => ({ id, name, score, lastRound }));
+    return rankStandings(
+      [...this.players.values()].map(({ id, name, score, lastTurn, prompterPoints, spectatorPoints, finalRoundPoints }) => ({
+        id,
+        name,
+        score,
+        lastTurn,
+        prompterPoints,
+        spectatorPoints,
+        finalRoundPoints,
+      })),
+    );
   }
 
   private broadcastPlayers() {
@@ -351,8 +613,20 @@ export class Room {
     this.timer = undefined;
     this.pending = undefined;
   }
+
+  // Drops the current turn: no more guesses, and any AI answer still on its way is ignored.
+  private clearTurn() {
+    if (!this.turn) return;
+    clearTimeout(this.turn.guessTimer);
+    this.turn.guessesOpen = false;
+    this.turn = null;
+  }
 }
 
 function publicPlayer({ id, name, score }: Player): Player {
   return { id, name, score };
+}
+
+function clampPercent(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
 }

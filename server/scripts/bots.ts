@@ -21,13 +21,19 @@ const { problems, results, standings } = await playGame({
 await server?.close();
 
 if (results) {
-  console.log("\nRound results:");
+  console.log("\nTurns (match score → describer points, then each guess):");
   for (const r of results) {
     const tag = r.result.refused ? " (refused)" : r.result.transcript ? "" : " (timed out)";
-    console.log(`  ${r.playerName.padEnd(6)} ${String(r.result.score).padStart(3)}${tag}  "${r.result.transcript}"`);
+    const guesses = r.guesses.map((g) => `${g.playerName} +${g.points}`).join(", ");
+    console.log(
+      `  ${r.playerName.padEnd(6)} ${String(r.result.score).padStart(3)}% → ${String(r.breakdown.total).padStart(4)}` +
+        ` (x${r.breakdown.multiplier})${tag}  guesses: ${guesses || "none"}`,
+    );
   }
-  console.log("\nFinal standings:");
-  for (const s of [...standings].sort((a, b) => b.score - a.score)) console.log(`  ${s.name.padEnd(6)} ${s.score}`);
+  console.log("\nFinal standings (total = describing + guessing):");
+  for (const s of standings) {
+    console.log(`  ${s.rank}. ${s.name.padEnd(6)} ${String(s.score).padStart(5)} = ${s.prompterPoints} + ${s.spectatorPoints}`);
+  }
 }
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
