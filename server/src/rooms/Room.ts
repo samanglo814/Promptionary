@@ -173,6 +173,7 @@ export class Room {
 
   private nextRound(): void {
     this.clearTimer();
+    clearTimeout(this.skipTimer);
     this.roundIndex++;
     if (this.roundIndex >= this.turnOrder.length) return this.gameOver();
 
