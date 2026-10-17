@@ -11,9 +11,11 @@ import {
   mockRoomCode,
   mockPlayers,
   mockResult,
+  mockRefusedResult,
   mockStandings,
   mockHallOfShame,
   type Player,
+  type SubmitResult,
 } from "@/lib/mocks";
 import RevealScreen from "./RevealScreen";
 import Scoreboard from "./Scoreboard";
@@ -44,6 +46,8 @@ export default function HostPage() {
   // Bumped every time a screen (re)starts. Used as the screen's `key`, so React builds
   // a fresh one and its animation plays from the start again.
   const [playCount, setPlayCount] = useState(0);
+  // Which result the reveal shows. FAKE: the server will send this with "round_result".
+  const [revealResult, setRevealResult] = useState<SubmitResult>(mockResult);
 
   // Switch screens and restart the new screen's animation.
   function show(next: Phase) {
@@ -70,7 +74,7 @@ export default function HostPage() {
       <>
         {/* FAKE: the server will send the real data with socket events */}
         {phase === "reveal" && (
-          <RevealScreen key={playCount} playerName="Sam" result={mockResult} />
+          <RevealScreen key={playCount} playerName="Sam" result={revealResult} />
         )}
         {phase === "scoreboard" && (
           <Scoreboard key={playCount} standings={mockStandings} final={false} />
@@ -149,8 +153,23 @@ export default function HostPage() {
 
       {/* TEMP: jump straight to any screen with mock data so you can test it */}
       <div className="flex gap-4 text-sm opacity-60">
-        <button onClick={() => show("reveal")} className="underline">
+        <button
+          onClick={() => {
+            setRevealResult(mockResult);
+            show("reveal");
+          }}
+          className="underline"
+        >
           Test reveal
+        </button>
+        <button
+          onClick={() => {
+            setRevealResult(mockRefusedResult);
+            show("reveal");
+          }}
+          className="underline"
+        >
+          Test refusal
         </button>
         <button onClick={() => show("scoreboard")} className="underline">
           Test scoreboard

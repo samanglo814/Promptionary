@@ -85,6 +85,19 @@ export const mockResult: SubmitResult = {
   caption: "Bold of you to call that a cat.",
 };
 
+// A round where the image generator refused to draw (safety filters).
+// The server still sends a caption; there's no AI image, and the score is 0.
+export const mockRefusedResult: SubmitResult = {
+  transcript: "a guy getting absolutely destroyed by a goose",
+  imageUrl: "",
+  targetImageUrl: "https://placehold.co/512x512?text=Goose+attack",
+  score: 0,
+  gotRight: [],
+  gotWrong: [],
+  caption: "Too spicy for the robot. Zero points, infinite respect.",
+  refused: true,
+};
+
 export const mockHallOfShame: HallOfShame = {
   stats: { roundsPlayed: 15, avgScore: 38, bannedBuzzes: 7, refusals: 2 },
   worstMisses: [
