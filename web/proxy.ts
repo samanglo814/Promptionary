@@ -10,10 +10,11 @@ export async function proxy(request: NextRequest) {
 
   // Only the host screen needs an account. Players join with just a name.
   if (request.nextUrl.pathname.startsWith("/host") && !(await auth0.getSession(request))) {
-    const login = request.nextUrl.clone();
-    login.pathname = "/auth/login";
-    login.search = "?returnTo=/host";
-    return NextResponse.redirect(login);
+    // First our own sign-in page (app/signin), which continues to Auth0.
+    const signIn = request.nextUrl.clone();
+    signIn.pathname = "/signin";
+    signIn.search = "";
+    return NextResponse.redirect(signIn);
   }
   return response;
 }
