@@ -34,7 +34,7 @@ import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
 
   If the AI can't help (down, or out of free requests), the game keeps going: drawings and guesses are
   scored by shared words instead (wordMatchScore). If it can't even transcribe, the describer gets one
-  retry; out of requests, the turn ends with 0 points for them (guesses still score).
+  retry; a second failure, or running out of requests, ends the turn with 0 points for them (guesses still score).
 */
 
 export type Phase =
@@ -50,6 +50,8 @@ export type Phase =
 
 // Phases the host's "next" button can cut short.
 const skippable: Phase[] = ["round_start", "reveal", "scoreboard", "game_over"];
+// The AI failing this many times in one turn (e.g. out of quota) ends the turn instead of retrying again.
+const MAX_AI_FAILURES = 2;
 
 type PlayerState = Player & {
   socketId: string | null; // null while disconnected
@@ -70,12 +72,12 @@ type Turn = {
   startedAt: number; // when describing started
   endsAt: number; // the describer's deadline (moves later if the AI fails)
   firstSubmitAt?: number; // for the speed bonus, so an AI failure doesn't change it
+  aiFailures: number; // how many times the AI failed this turn; after MAX_AI_FAILURES the turn moves on
   guessEndsAt: number;
   guessesOpen: boolean;
   guessTimer?: NodeJS.Timeout;
   guesses: Map<string, Guess>; // by player id, in the order they came in
   drawing?: { transcript: string; sketch: Sketch; bannedHits: number; described: boolean }; // set once drawn
-  retried: boolean; // the describer already got extra time after an AI failure (only once per turn)
   judging: boolean; // the AI is judging the drawing and the guesses
   // Settles with the turn's result, for the describer's /submit request.
   result: Deferred<SubmitResult>;
@@ -339,7 +341,7 @@ export class Room {
       guessEndsAt: now + config.guessMs,
       guessesOpen: true,
       guesses: new Map(),
-      retried: false,
+      aiFailures: 0,
       judging: false,
       result: deferred(),
     };
@@ -426,6 +428,11 @@ export class Room {
         this.endUndescribed(turn, "The AI is out of free requests, so it couldn't hear a thing. No points lost!");
         throw new SubmitError(503, "The AI is out of free requests for now, so this turn can't be scored. Sorry!");
       }
+      // Failing again and again would loop forever: give up and move on.
+      if (++turn.aiFailures >= MAX_AI_FAILURES) {
+        this.endUndescribed(turn, "The AI ran out of juice. This one's on the house.");
+        throw new SubmitError(503, "The AI is having a moment. Moving on!");
+      }
       this.retryDescribing(turn);
       throw new SubmitError(502, "The AI couldn't listen to that. Send it again!");
     }
@@ -449,16 +456,12 @@ export class Room {
     return turn.result.promise;
   }
 
-  // The AI failed: give the describer back their turn. The first time with enough time to try again;
-  // after that the clock keeps running, so a broken AI can't keep one turn going forever.
+  // The AI failed (the first time this turn): give the describer back their turn, with enough time to try again.
   // Guesses stay, and anyone who hasn't guessed gets at least as long as the describer.
   private retryDescribing(turn: Turn) {
     const { config } = this.deps;
     const describer = this.describer();
-    if (!turn.retried) {
-      turn.retried = true;
-      turn.endsAt = Math.max(turn.endsAt, Date.now() + config.retryMs);
-    }
+    turn.endsAt = Math.max(turn.endsAt, Date.now() + config.retryMs);
     if (turn.guessesOpen && turn.guessEndsAt < turn.endsAt) {
       turn.guessEndsAt = turn.endsAt;
       clearTimeout(turn.guessTimer);

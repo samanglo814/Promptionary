@@ -65,9 +65,44 @@ export type GeminiOptions = {
   loadImage?: (url: string) => Promise<{ data: Buffer; mimeType: string }>;
 };
 
-export function geminiClient(apiKey: string): Generate {
-  const client = new GoogleGenAI({ apiKey });
+// GEMINI_API_KEY can hold several keys, comma-separated (each from its own Google Cloud project,
+// so each has its own free quota). When a key runs out (429), the next one takes over.
+export function geminiClient(apiKeys: string): Generate {
+  const clients = apiKeys
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean)
+    .map((apiKey): Generate => {
+      const client = new GoogleGenAI({ apiKey });
+      return (params) => client.models.generateContent(params);
+    });
+  return withKeyRotation(clients);
+}
+
+// Gemini through Google Cloud's Vertex AI instead of an AI Studio key: billed to the project's
+// Cloud billing account (where free-trial credits apply), with no free-tier daily cap.
+// Signs in with Application Default Credentials: run `gcloud auth application-default login` once.
+export function vertexClient(project: string, location: string): Generate {
+  const client = new GoogleGenAI({ vertexai: true, project, location });
   return (params) => client.models.generateContent(params);
+}
+
+// Calls the current key; on "out of quota" (429) moves to the next key and tries again,
+// until every key has been tried once. Later calls start from the key that last worked.
+export function withKeyRotation(clients: Generate[]): Generate {
+  let current = 0;
+  return async (params) => {
+    for (let tried = 1; ; tried++) {
+      try {
+        return await clients[current]!(params);
+      } catch (err) {
+        const outOfQuota = (err as { status?: unknown }).status === 429;
+        if (!outOfQuota || tried >= clients.length) throw err;
+        current = (current + 1) % clients.length;
+        console.warn(`Gemini key out of quota, switching to key ${current + 1} of ${clients.length}`);
+      }
+    }
+  };
 }
 
 export function createGeminiAi(options: GeminiOptions): Ai {

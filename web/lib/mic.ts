@@ -42,12 +42,13 @@ async function openMic(): Promise<MediaStream> {
   return stream;
 }
 
-// Ask for the mic early (call it from a tap, e.g. the Join button), so the permission popup
-// doesn't eat into someone's turn. Failing here is fine: "Tap to talk" asks again.
-export function warmUpMic() {
+// Call from a tap (e.g. the Join button). Unlocks audio, so a recording can start later even outside
+// a tap. With `openMic`, also asks for the mic now, so the permission popup doesn't eat into
+// someone's turn. Failing here is fine: "Tap to talk" asks again.
+export function warmUpMic({ openMic: open }: { openMic: boolean }) {
   if (!micAvailable()) return;
   void audioContext().resume().catch(() => {});
-  void openMic().catch(() => {});
+  if (open) void openMic().catch(() => {});
 }
 
 export type Recording = {

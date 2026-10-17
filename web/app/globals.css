@@ -2,23 +2,40 @@
 
 @import "tailwindcss";
 
-/* Design tokens. Each --color-x becomes Tailwind classes like bg-x / text-x,
-   and --radius-card becomes rounded-card. */
+/* Design tokens, from the Drawrades Figma. Each --color-x becomes Tailwind classes like
+   bg-x / text-x / border-x, and --radius-x becomes rounded-x.
+   One flat dark stage, three accent colors with fixed meanings:
+     human (cyan)  = players and their guesses
+     ai (pink)     = what the AI did, and anything bad (banned words, misses)
+     point (lime)  = points and good news
+   plus violet for the one action on each screen. */
 @theme {
-  --color-ink: #1a1423;
-  --color-paper: #fff8ef;
-  --color-pop: #ff4d6d;
-  --color-zap: #ffd23f;
-  --color-cool: #3ec1d3;
-  --radius-card: 1.25rem;
+  --color-stage: #101018; /* page background */
+  --color-panel: #1b1928; /* cards on the stage */
+  --color-raised: #252135; /* things inside cards, badges */
+  --color-line: #40394f; /* borders, empty meter tracks */
+  --color-text: #f8f8fc;
+  --color-muted: #b4adc7; /* secondary text */
+  --color-dim: #8f86a2; /* labels, footers */
+  --color-human: #38d9f5;
+  --color-ai: #ff5c8a;
+  --color-point: #c7f464;
+  --color-action: #8b5cf6;
+  --color-action-edge: #b899ff;
+
+  --radius-panel: 24px;
+  --radius-inner: 16px;
+
+  --font-display: var(--font-lilita), ui-rounded, system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 }
 
 body {
-  background: var(--color-paper);
-  color: var(--color-ink);
+  background: var(--color-stage);
+  color: var(--color-text);
 }
 
-/* Players bounce in when they join */
+/* Players pop in when they join */
 @keyframes pop {
   from { transform: scale(0.6); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }
@@ -32,22 +49,32 @@ body {
   to   { clip-path: inset(0 0 0 0); }
 }
 
-/* Reveal: things fade up into place (labels, transcript, score) */
+/* Things fade up into place (labels, rows, score lines) */
 @keyframes rise {
   from { transform: translateY(1rem); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
 }
 
-/* Podium: blocks grow up out of the floor.
-   scaleY squashes an element vertically: 0 = flat, 1 = full height.
-   Pair it with origin-bottom so it grows upward instead of from the middle. */
+/* Podium: blocks grow up out of the floor. Pair with origin-bottom. */
 @keyframes grow {
   from { transform: scaleY(0); }
   to   { transform: scaleY(1); }
 }
 
-/* Scoreboard: bars fill from left to right. Pair with origin-left. */
+/* Bars fill from left to right. Pair with origin-left. */
 @keyframes fill {
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); }
+}
+
+/* Banned word: the screen edge flashes pink */
+@keyframes buzz {
+  0%, 100% { box-shadow: inset 0 0 0 0 var(--color-ai); }
+  20%      { box-shadow: inset 0 0 0 12px var(--color-ai); }
+}
+
+/* The "AI is drawing" dots */
+@keyframes blink {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 1; }
 }

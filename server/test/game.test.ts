@@ -79,7 +79,7 @@ describe("game server", () => {
     assert.equal((await submit(server.url, { roomCode: "ZZZZ", playerId: sam.id, text: "hi" })).status, 404);
     assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id })).status, 400);
     assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "hi", audio: new Blob(["x"]) })).status, 400);
-    assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "x".repeat(201) })).status, 400);
+    assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "x".repeat(501) })).status, 400);
     assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "hi" })).status, 403, "lobby");
 
     host.socket.emit("start_game");
@@ -144,8 +144,8 @@ describe("game server", () => {
     await slow.close();
   });
 
-  test("if transcribing fails, the describer gets a 502 and extra time, but only once", async () => {
-    let failures = 2;
+  test("if transcribing fails, the describer gets a 502 and extra time; a second failure ends the turn", async () => {
+    let failures = 1;
     const fake = createFakeAi(0);
     const flaky: Ai = {
       ...fake,
@@ -163,14 +163,22 @@ describe("game server", () => {
     const originalError = console.error;
     console.error = () => {}; // the server logs the failures; keep test output clean
     assert.equal((await send()).status, 502);
-    const retry = players[0]!.client.all("your_turn").at(-1)!;
-    assert.ok(retry.endsAt > endsAt, "the first failure buys more time");
-    assert.equal((await send()).status, 502);
     console.error = originalError;
-    assert.equal(players[0]!.client.all("your_turn").at(-1)!.endsAt, retry.endsAt, "the second one doesn't");
-
-    assert.equal((await send()).status, 200);
+    assert.ok(players[0]!.client.all("your_turn").at(-1)!.endsAt > endsAt, "the failure buys more time");
+    assert.equal((await send()).status, 200, "and the retry works");
     await host.waitFor("round_result");
+
+    // Next turn: Ana's transcription fails twice, and the turn moves on instead of looping.
+    failures = 2;
+    await players[1]!.client.waitFor("your_turn");
+    console.error = () => {};
+    const tries = [];
+    for (let i = 0; i < 2; i++) tries.push((await submit(flakyServer.url, { roomCode: code, playerId: players[1]!.id, audio: fakeAudio() })).status);
+    console.error = originalError;
+    assert.deepEqual(tries, [502, 503]);
+    const { result, breakdown } = await host.waitFor("round_result", (r) => r.playerName === "Ana");
+    assert.equal(breakdown.total, 0);
+    assert.match(result.caption, /out of juice/);
     closeAll();
     await flakyServer.close();
   });

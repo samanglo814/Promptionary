@@ -1,6 +1,7 @@
 // Sends a player's description to the server's /submit endpoint and gets back the
 // round result (transcript, AI image, score, caption).
-// A description is always a voice recording: the other players guess from hearing it.
+// A description is always spoken (the other players guess from hearing it), and arrives as either
+// the recording (submitAudio) or the words the phone transcribed itself (submitText).
 //
 // Until the server exists, both return the mock result instead, so the frontend
 // can be built and tested on its own.
@@ -13,9 +14,10 @@ import { mockResult, type SubmitResult } from "./mocks";
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL;
 
 // Pretend to be the server: wait 1.5s like the AI is "thinking", then return fake data.
-async function fakeSubmit(): Promise<SubmitResult> {
+async function fakeSubmit(transcript?: string): Promise<SubmitResult> {
   await new Promise((resolve) => setTimeout(resolve, 1500));
-  return mockResult;
+  // If we know what they said (the phone's speech-to-text), show it back so testing feels real.
+  return transcript ? { ...mockResult, transcript } : mockResult;
 }
 
 // /submit said no. `status` is the HTTP status: 503 = the AI is out of free requests (the turn
@@ -59,8 +61,22 @@ export async function submitAudio(
   if (!SERVER_URL) return fakeSubmit();
 
   // FormData is how browsers send files over HTTP (same as a file upload form).
-  // The recording is always WAV (see lib/mic.ts).
+  // The recording is WAV (see lib/mic.ts).
   const form = new FormData();
   form.append("audio", audio, "description.wav");
+  return send(form, roomCode, playerId);
+}
+
+// Spoken words the phone already turned into text: sends the text instead of a file. Same endpoint,
+// so the server only needs one /submit: if there's a "text" field it skips transcription.
+export async function submitText(
+  text: string,
+  roomCode: string,
+  playerId: string,
+): Promise<SubmitResult> {
+  if (!SERVER_URL) return fakeSubmit(text);
+
+  const form = new FormData();
+  form.append("text", text);
   return send(form, roomCode, playerId);
 }
