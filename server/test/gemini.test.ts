@@ -25,7 +25,10 @@ const judgement = JSON.stringify({
 });
 
 // A fake Gemini: image calls get `image`, text calls get `text`. Records every call.
-function fakeGemini(responses: { image?: () => GenerateContentResponse; text?: () => GenerateContentResponse }) {
+function fakeGemini(
+  responses: { image?: () => GenerateContentResponse; text?: () => GenerateContentResponse },
+  drawImage?: (prompt: string) => Promise<{ data: Buffer; mimeType: string } | undefined>,
+) {
   const calls: GenerateContentParameters[] = [];
   const generate: Generate = async (params) => {
     calls.push(params);
@@ -38,6 +41,7 @@ function fakeGemini(responses: { image?: () => GenerateContentResponse; text?: (
     generate,
     textModel: "text-model",
     imageModel: "image-model",
+    drawImage,
     images,
     loadImage: async () => ({ data: png, mimeType: "image/png" }),
   });
@@ -56,6 +60,19 @@ describe("gemini ai", () => {
     const transcript = await ai.transcribe({ kind: "audio", audio: Buffer.from("audio"), mimeType: "audio/webm;codecs=opus" });
     assert.equal(transcript, "a dog on wheels");
     assert.match(JSON.stringify(calls[0]!.contents), /"mimeType":"audio\/webm"/);
+  });
+
+  test("a custom drawImage draws instead of the Gemini image model", async () => {
+    const prompts: string[] = [];
+    const drawImage = async (prompt: string) => {
+      prompts.push(prompt);
+      return { data: png, mimeType: "image/png" };
+    };
+    const { ai, calls } = fakeGemini({ text: () => textResponse(judgement) }, drawImage);
+    const drawing = await ai.draw("a furry barking friend on a plank", target);
+    assert.equal(drawing.score, 42);
+    assert.match(prompts[0]!, /a furry barking friend on a plank/);
+    assert.deepEqual(calls.map((c) => c.model), ["text-model"]);
   });
 
   test("draws, stores the image, and scores it", async () => {
