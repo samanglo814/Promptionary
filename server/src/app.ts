@@ -2,16 +2,31 @@ import { createServer, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import cors from "cors";
 import express from "express";
-import { Server } from "socket.io";
+import { Server, type Socket } from "socket.io";
+import type { Ai } from "./ai/index.js";
+import { createFakeAi } from "./ai/fake.js";
 import { defaultConfig, type GameConfig } from "./config.js";
+import { RoomStore } from "./rooms/RoomStore.js";
+import { registerSockets } from "./sockets.js";
+import { loadTargets } from "./targets.js";
 import type { ClientToServerEvents, ServerToClientEvents } from "./types.js";
 
-export type GameIo = Server<ClientToServerEvents, ServerToClientEvents>;
+// What the server remembers about each connection.
+export type SocketData = {
+  role?: "host" | "player";
+  code?: string;
+  playerId?: string;
+};
+
+export type GameIo = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
+export type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 export type ServerOptions = {
   // The web app's URL(s), for CORS on both HTTP and Socket.io.
   clientOrigin: string[];
   config?: Partial<GameConfig>;
+  // Defaults to the fake AI.
+  ai?: Ai;
 };
 
 export type GameServer = {
@@ -34,7 +49,13 @@ export function createGameServer(options: ServerOptions): GameServer {
 
   const httpServer = createServer(app);
   const io: GameIo = new Server(httpServer, { cors: corsOptions });
-  void config;
+  const rooms = new RoomStore({
+    io,
+    config,
+    ai: options.ai ?? createFakeAi(config.fakeAiDelayMs),
+    targets: loadTargets(),
+  });
+  registerSockets(io, rooms);
 
   return {
     httpServer,

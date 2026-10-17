@@ -1,0 +1,38 @@
+[
+  {
+    "id": "dog-skateboard",
+    "imageUrl": "https://placehold.co/512x512/png?text=Dog+on+a+skateboard",
+    "bannedWords": ["dog", "puppy", "skateboard", "wheels"],
+    "difficulty": 1
+  },
+  {
+    "id": "goose-attack",
+    "imageUrl": "https://placehold.co/512x512/png?text=Goose+chasing+a+jogger",
+    "bannedWords": ["goose", "bird", "run", "jogger", "chase"],
+    "difficulty": 2
+  },
+  {
+    "id": "astronaut-bath",
+    "imageUrl": "https://placehold.co/512x512/png?text=Astronaut+in+a+bathtub",
+    "bannedWords": ["astronaut", "space", "bath", "bathtub", "helmet"],
+    "difficulty": 2
+  },
+  {
+    "id": "cake-volcano",
+    "imageUrl": "https://placehold.co/512x512/png?text=Erupting+cake+volcano",
+    "bannedWords": ["cake", "volcano", "lava", "erupt", "dessert"],
+    "difficulty": 2
+  },
+  {
+    "id": "cat-business",
+    "imageUrl": "https://placehold.co/512x512/png?text=Cat+in+a+business+suit",
+    "bannedWords": ["cat", "kitten", "suit", "tie", "office"],
+    "difficulty": 1
+  },
+  {
+    "id": "octopus-piano",
+    "imageUrl": "https://placehold.co/512x512/png?text=Octopus+playing+piano",
+    "bannedWords": ["octopus", "tentacle", "piano", "keys", "music"],
+    "difficulty": 3
+  }
+]
