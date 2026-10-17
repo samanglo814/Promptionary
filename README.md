@@ -112,6 +112,7 @@ cp web/.env.example web/.env
 ```
 PORT=4000
 CLIENT_ORIGIN=http://localhost:3000
+PUBLIC_URL=
 GEMINI_API_KEY=
 GEMINI_TEXT_MODEL=
 GEMINI_IMAGE_MODEL=

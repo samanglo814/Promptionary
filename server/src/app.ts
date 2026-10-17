@@ -5,6 +5,7 @@ import express from "express";
 import { Server, type Socket } from "socket.io";
 import type { Ai } from "./ai/index.js";
 import { createFakeAi } from "./ai/fake.js";
+import type { ImageStore } from "./ai/images.js";
 import { defaultConfig, type GameConfig } from "./config.js";
 import { submitRouter, uploadErrors } from "./http/submit.js";
 import { RoomStore } from "./rooms/RoomStore.js";
@@ -28,6 +29,8 @@ export type ServerOptions = {
   config?: Partial<GameConfig>;
   // Defaults to the fake AI.
   ai?: Ai;
+  // Where the AI keeps the images it draws; served at /images/:id.
+  images?: ImageStore;
 };
 
 export type GameServer = {
@@ -57,6 +60,7 @@ export function createGameServer(options: ServerOptions): GameServer {
     targets: loadTargets(),
   });
   registerSockets(io, rooms);
+  if (options.images) app.use(options.images.router());
   app.use(submitRouter(rooms, config));
   app.use(uploadErrors);
 

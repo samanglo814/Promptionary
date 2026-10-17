@@ -247,7 +247,7 @@ Suggest adding both columns. `worstWords` can be computed from `transcript` + `s
 
 ## 6. Environment variables
 
-**`server/.env`**: `PORT`, `CLIENT_ORIGIN`, `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_IMAGE_MODEL`, `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `DEMO_MODE`
+**`server/.env`**: `PORT`, `CLIENT_ORIGIN`, `PUBLIC_URL` (the server's address as browsers see it, for AI image URLs; defaults to `http://localhost:PORT`), `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_IMAGE_MODEL`, `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `DEMO_MODE`
 
 **`web/.env`**: `NEXT_PUBLIC_SERVER_URL` (when unset, the web app uses mocks), `NEXT_PUBLIC_AUTH0_DOMAIN`, `NEXT_PUBLIC_AUTH0_CLIENT_ID`, `NEXT_PUBLIC_AUTH0_AUDIENCE`
 
