@@ -118,5 +118,125 @@
     "prompt": "A businessman in a boardroom meeting talking very seriously into a banana like a phone",
     "bannedWords": ["banana", "phone", "call", "fruit", "meeting"],
     "difficulty": 2
+  },
+  {
+    "id": "hippo-ballet",
+    "prompt": "A chubby hippo in a pink tutu doing ballet on a theater stage, spinning on tiptoe",
+    "bannedWords": ["hippo", "hippopotamus", "ballet", "dance", "tutu"],
+    "difficulty": 2
+  },
+  {
+    "id": "pirate-bathtub",
+    "prompt": "A pirate captain sailing a bathtub across a stormy sea, using a mop as a mast",
+    "bannedWords": ["pirate", "captain", "bathtub", "boat", "ship"],
+    "difficulty": 2
+  },
+  {
+    "id": "vampire-dentist",
+    "prompt": "A nervous vampire sitting in a dentist's chair while the dentist examines his fangs",
+    "bannedWords": ["vampire", "dracula", "dentist", "fangs", "teeth"],
+    "difficulty": 3
+  },
+  {
+    "id": "cow-moon",
+    "prompt": "A cow wearing a jetpack flying over the moon at night, stars all around",
+    "bannedWords": ["cow", "jetpack", "moon", "fly", "space"],
+    "difficulty": 2
+  },
+  {
+    "id": "mouse-chef",
+    "prompt": "A tiny mouse chef with a tall white hat slicing a huge wedge of cheese in a cozy kitchen",
+    "bannedWords": ["mouse", "rat", "chef", "cheese", "cook"],
+    "difficulty": 1
+  },
+  {
+    "id": "wizard-laundromat",
+    "prompt": "A wizard in a starry robe waiting at a laundromat, his robes spinning in a washing machine",
+    "bannedWords": ["wizard", "magic", "laundromat", "washing", "robe"],
+    "difficulty": 3
+  },
+  {
+    "id": "koala-traffic",
+    "prompt": "A koala in a reflective vest directing traffic at a busy city intersection, blowing a whistle and holding up one paw",
+    "bannedWords": ["koala", "traffic", "police", "cars", "directing"],
+    "difficulty": 2
+  },
+  {
+    "id": "dinosaur-tea",
+    "prompt": "A huge T-rex having a dainty tea party with a teddy bear, struggling to hold the tiny teacup with its short arms",
+    "bannedWords": ["dinosaur", "rex", "tea", "party", "cup"],
+    "difficulty": 2
+  },
+  {
+    "id": "snail-racecar",
+    "prompt": "A snail with a shiny red race car for a shell zooming down a race track, leaving a trail of smoke",
+    "bannedWords": ["snail", "race", "car", "shell", "fast"],
+    "difficulty": 2
+  },
+  {
+    "id": "cactus-hug",
+    "prompt": "A lonely cactus in the desert with its arms open wide for a hug, while a tumbleweed rolls past and a frightened balloon floats away",
+    "bannedWords": ["cactus", "desert", "hug", "balloon", "prickly"],
+    "difficulty": 3
+  },
+  {
+    "id": "mermaid-bus",
+    "prompt": "A mermaid sitting on a city bus during rush hour, her tail curled across the seats, other passengers staring",
+    "bannedWords": ["mermaid", "bus", "tail", "fish", "commute"],
+    "difficulty": 2
+  },
+  {
+    "id": "raccoon-burglar",
+    "prompt": "A raccoon in a striped shirt and eye mask sneaking out of a kitchen with a bag full of snacks at night",
+    "bannedWords": ["raccoon", "thief", "steal", "burglar", "snacks"],
+    "difficulty": 2
+  },
+  {
+    "id": "yeti-sauna",
+    "prompt": "A big furry yeti relaxing in a wooden sauna with a towel on its head, sweating",
+    "bannedWords": ["yeti", "bigfoot", "sauna", "sweat", "towel"],
+    "difficulty": 3
+  },
+  {
+    "id": "bee-orchestra",
+    "prompt": "A bee conducting an orchestra of other insects on a giant sunflower stage",
+    "bannedWords": ["bee", "conductor", "orchestra", "insect", "music"],
+    "difficulty": 3
+  },
+  {
+    "id": "whale-balloon",
+    "prompt": "A whale floating through the sky held up by hundreds of colorful balloons above a small town",
+    "bannedWords": ["whale", "balloon", "fly", "sky", "float"],
+    "difficulty": 2
+  },
+  {
+    "id": "baby-food-fight",
+    "prompt": "A baby in a high chair angrily banging a spoon, food flying everywhere, parents ducking for cover, no speech bubbles",
+    "bannedWords": ["baby", "spoon", "food", "mess", "highchair"],
+    "difficulty": 1
+  },
+  {
+    "id": "ninja-grocery",
+    "prompt": "A ninja in black sneaking through a supermarket on tiptoe, hiding behind a pile of watermelons, plain unlabeled shelves",
+    "bannedWords": ["ninja", "sneak", "hide", "watermelon", "supermarket"],
+    "difficulty": 2
+  },
+  {
+    "id": "polar-bear-icecream",
+    "prompt": "A polar bear on a hot summer day licking a gigantic melting ice cream cone",
+    "bannedWords": ["polar", "bear", "ice", "cream", "melt"],
+    "difficulty": 1
+  },
+  {
+    "id": "tortoise-skydive",
+    "prompt": "An old tortoise with goggles skydiving under a big open parachute, high above green fields",
+    "bannedWords": ["tortoise", "turtle", "skydive", "parachute", "jump"],
+    "difficulty": 2
+  },
+  {
+    "id": "chicken-crossing",
+    "prompt": "A chicken in a crossing guard vest holding up a blank round paddle while a line of baby ducks crosses the road",
+    "bannedWords": ["chicken", "crossing", "road", "duck", "stop"],
+    "difficulty": 2
   }
 ]

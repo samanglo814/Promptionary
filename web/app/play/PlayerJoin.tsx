@@ -120,6 +120,8 @@ export default function PlayerJoin() {
   // Guessing on someone else's turn: who's describing, when guessing closes, and my locked-in guess.
   const [describerName, setDescriberName] = useState("");
   const [guessEndsAt, setGuessEndsAt] = useState<number | undefined>(undefined);
+  // The guess clock only starts once the describer says their first word.
+  const [guessClockStarted, setGuessClockStarted] = useState(false);
   const [lockedGuess, setLockedGuess] = useState<{ text: string; speed: number } | null>(null);
   const [guessSending, setGuessSending] = useState(false);
   const [guessError, setGuessError] = useState("");
@@ -207,11 +209,16 @@ export default function PlayerJoin() {
             },
       );
     });
-    s.on("describing", ({ describer, guessEndsAt }) => {
+    s.on("describing", ({ describer, guessEndsAt, guessClockStarted }) => {
       if (describer.id === myId) return;
       setDescriberName(describer.name);
       setGuessEndsAt(guessEndsAt);
+      setGuessClockStarted(guessClockStarted);
       setPhase("guessing");
+    });
+    s.on("guess_clock", ({ guessEndsAt }) => {
+      setGuessEndsAt(guessEndsAt);
+      setGuessClockStarted(true);
     });
     s.on("guess_locked", (guess) => {
       guessed = true;
@@ -324,6 +331,7 @@ export default function PlayerJoin() {
           roomCode={code}
           playerId={me.id}
           endsAt={endsAt}
+          onSpeaking={() => socket?.emit("speaking")}
           onSubmitted={(r) => {
             setResult(r);
             // The reveal can arrive before /submit answers (everyone locked in fast).
@@ -341,6 +349,8 @@ export default function PlayerJoin() {
           myName={me.name}
           describerName={describerName}
           guessEndsAt={guessEndsAt}
+          // Mock mode has no describer, so the clock just runs.
+          clockStarted={guessClockStarted || !socket}
           locked={lockedGuess}
           sending={guessSending}
           error={guessError}

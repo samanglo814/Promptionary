@@ -16,6 +16,8 @@ type Props = {
   // Called once with the finished recording. The parent decides what to do with it
   // (send it to /submit, play it back, etc.). This keeps the recorder reusable.
   onRecorded: (audio: Blob) => void;
+  // Called once, when the first word is heard (the guessers' clock starts then, not at the tap).
+  onSpeaking?: () => void;
   // Called instead, with the words, when the phone turned the speech into text itself.
   onTranscript: (text: string) => void;
 };
@@ -55,7 +57,7 @@ function newRecognition(): Recognition | null {
   return SpeechRecognition ? new SpeechRecognition() : null;
 }
 
-export default function MicRecorder({ maxSeconds = 20, onRecorded, onTranscript }: Props) {
+export default function MicRecorder({ maxSeconds = 20, onRecorded, onTranscript, onSpeaking }: Props) {
   // Which screen we're on.
   const [status, setStatus] = useState<Status>("idle");
   // Countdown number shown on the button.
@@ -73,6 +75,13 @@ export default function MicRecorder({ maxSeconds = 20, onRecorded, onTranscript 
   const [words, setWords] = useState("");
   const wordsRef = useRef("");
   const listeningRef = useRef(false);
+  // Whether onSpeaking has been called yet, so it only fires once.
+  const spokeRef = useRef(false);
+  function spoke() {
+    if (spokeRef.current) return;
+    spokeRef.current = true;
+    onSpeaking?.();
+  }
 
   // Cleanup: if the player leaves the screen mid-recording, cancel the timer, the recording and the listening.
   // (A recording's mic stays open for the next turn, see lib/mic.ts, so the phone doesn't ask again.)
@@ -122,6 +131,7 @@ export default function MicRecorder({ maxSeconds = 20, onRecorded, onTranscript 
     recognition.onresult = (e) => {
       const heard = Array.from(e.results, (result) => result[0]?.transcript ?? "").join(" ");
       wordsRef.current = `${earlier} ${heard}`.replace(/\s+/g, " ").trim();
+      if (wordsRef.current) spoke();
       setWords(wordsRef.current);
     };
     recognition.onerror = (e) => {
@@ -193,7 +203,7 @@ export default function MicRecorder({ maxSeconds = 20, onRecorded, onTranscript 
     try {
       // The first time, the phone shows an "Allow microphone?" popup.
       // If the player says no, this throws and we land in the catch below.
-      recordingRef.current = await startRecording();
+      recordingRef.current = await startRecording(spoke);
       startCountdown();
     } catch {
       // Usually means the player tapped "Don't allow", or another app is using the mic.

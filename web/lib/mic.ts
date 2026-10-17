@@ -13,6 +13,8 @@ const WAV_SAMPLE_RATE = 16_000;
 const MIN_SECONDS = 0.5;
 // Quieter than this all the way through (about -46 dB) means the mic heard nothing, e.g. it was muted.
 const MIN_PEAK = 0.005;
+// Louder than this (about -28 dB) counts as the player starting to talk, for onSound.
+const SPEECH_PEAK = 0.04;
 
 let stream: MediaStream | null = null;
 let context: AudioContext | null = null;
@@ -59,7 +61,8 @@ export type Recording = {
 };
 
 // Starts recording. Call it from a tap: the audio engine has to be resumed during one.
-export async function startRecording(): Promise<Recording> {
+// onSound is called once, when the mic first hears something loud enough to be speech.
+export async function startRecording(onSound?: () => void): Promise<Recording> {
   const ctx = audioContext();
   const resumed = ctx.resume(); // first, while we're still inside the tap
   const mic = await openMic();
@@ -69,7 +72,15 @@ export async function startRecording(): Promise<Recording> {
   // ScriptProcessorNode is old but works everywhere, including older iPhones.
   const processor = ctx.createScriptProcessor(4096, 1, 1);
   const chunks: Float32Array[] = [];
-  processor.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  let heard = false;
+  processor.onaudioprocess = (e) => {
+    const chunk = new Float32Array(e.inputBuffer.getChannelData(0));
+    chunks.push(chunk);
+    if (!heard && onSound && chunk.some((s) => Math.abs(s) >= SPEECH_PEAK)) {
+      heard = true;
+      onSound();
+    }
+  };
   source.connect(processor);
   processor.connect(ctx.destination); // some browsers only run the processor when it's connected (it outputs silence)
 

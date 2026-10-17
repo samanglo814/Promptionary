@@ -20,6 +20,7 @@ type Props = {
   roomCode: string; // sent along with the description so the server knows which room
   playerId: string; // ...and which player
   endsAt?: number; // when the server stops accepting descriptions (epoch ms); unset with mocks
+  onSpeaking: () => void; // the mic heard the first word (starts the guessers' clock)
   onSubmitted: (result: SubmitResult) => void; // called when /submit answers
 };
 
@@ -30,7 +31,7 @@ const MAX_SPOKEN_CHARS = 500;
 // Shows the secret image and banned words, and sends their spoken description to /submit:
 // as text when the phone turned the speech into text itself, otherwise as a recording.
 // Voice only: the other players guess from hearing it out loud, so there's no typing.
-export default function DescribeScreen({ myName, target, roomCode, playerId, endsAt, onSubmitted }: Props) {
+export default function DescribeScreen({ myName, target, roomCode, playerId, endsAt, onSpeaking, onSubmitted }: Props) {
   // Seconds left in the turn. The round clock starts when the turn starts, not when the
   // player taps the mic, so the recording must stop by then too. null with mocks.
   const turnSecondsLeft = useSecondsLeft(endsAt);
@@ -124,6 +125,7 @@ export default function DescribeScreen({ myName, target, roomCode, playerId, end
             <MicRecorder
               key={attempt}
               maxSeconds={turnSecondsLeft === null ? undefined : Math.max(1, turnSecondsLeft)}
+              onSpeaking={onSpeaking}
               onRecorded={(audio) => sendDescription(() => submitAudio(audio, roomCode, playerId))}
               onTranscript={(words) => sendDescription(() => submitText(words.slice(0, MAX_SPOKEN_CHARS), roomCode, playerId))}
             />

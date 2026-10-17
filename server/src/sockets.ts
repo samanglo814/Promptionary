@@ -52,6 +52,11 @@ export function registerSockets(io: GameIo, rooms: RoomStore) {
       if (error) socket.emit("guess_error", { reason: error });
     });
 
+    socket.on("speaking", () => {
+      const { role, code, playerId } = socket.data;
+      if (role === "player" && code && playerId) rooms.get(code)?.speaking(playerId);
+    });
+
     // The host page waits for the answer, so a click that never reached the server doesn't fail silently.
     socket.on("start_game", (ack) => {
       const room = hostRoom();
