@@ -64,6 +64,7 @@ export class Room {
   private rounds: RoundRecord[] = [];
   private timer: NodeJS.Timeout | undefined;
   private pending: (() => void) | undefined; // what the timer will do; "next" runs it early
+  private skipTimer: NodeJS.Timeout | undefined; // skips a disconnected describer's turn
   private closed = false;
 
   constructor(
@@ -115,9 +116,15 @@ export class Room {
       this.players.delete(playerId);
     } else {
       player.socketId = null;
-      // Their turn hasn't really started yet, so skip it. (If they already submitted, let it finish.)
-      if (this.describerId === playerId && (this.phase === "intro" || this.phase === "describing")) {
-        this.nextRound();
+      // If it's their turn and they haven't submitted, give them a moment to come back, then skip them.
+      // (If they already submitted, the round finishes without them.)
+      if (this.describerId === playerId && this.awaitingDescriber()) {
+        const round = this.roundIndex;
+        clearTimeout(this.skipTimer);
+        this.skipTimer = setTimeout(() => {
+          if (this.closed || this.roundIndex !== round || player.socketId || !this.awaitingDescriber()) return;
+          this.nextRound();
+        }, this.deps.config.reconnectGraceMs);
       }
     }
     this.broadcastPlayers();
@@ -127,6 +134,7 @@ export class Room {
   close() {
     this.closed = true;
     this.clearTimer();
+    clearTimeout(this.skipTimer);
     this.deps.io.to(this.code).emit("error", { message: "The host left, so the game ended." });
   }
 
@@ -305,6 +313,10 @@ export class Room {
   }
 
   // ---------- Helpers ----------
+
+  private awaitingDescriber(): boolean {
+    return this.phase === "intro" || this.phase === "describing";
+  }
 
   private describer(): PlayerState {
     const p = this.describerId ? this.players.get(this.describerId) : undefined;

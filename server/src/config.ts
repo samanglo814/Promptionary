@@ -12,6 +12,8 @@ export type GameConfig = {
   submitGraceMs: number;
   // If the AI fails, the describer gets at least this long to try again.
   retryMs: number;
+  // A describer who disconnects (e.g. their phone refreshed) has this long to rejoin before their turn is skipped.
+  reconnectGraceMs: number;
   revealMs: number;
   scoreboardMs: number;
   gameOverMs: number; // podium, then the Hall of Shame
@@ -38,6 +40,7 @@ export const defaultConfig: GameConfig = {
   describeMs: 20_000,
   submitGraceMs: 3_000,
   retryMs: 10_000,
+  reconnectGraceMs: 5_000,
   revealMs: 8_000,
   scoreboardMs: 6_000,
   gameOverMs: 10_000,
