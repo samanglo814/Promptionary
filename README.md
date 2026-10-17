@@ -79,7 +79,7 @@ flowchart LR
 2. **Banned-word check:** string match on the transcript.
 3. **Image generation:** the transcript is passed nearly verbatim so the mistakes stay authentic.
 4. **Scoring:** once guessing closes, one Gemini vision call compares the original and generated images, writes a short playful roast, and scores everyone's guesses, as structured JSON. One call instead of two saves the free tier's daily requests.
-5. **Fallbacks:** if Gemini is down or out of free requests, the game keeps going: the words are scored instead of the drawing, and a voice describer is asked to type.
+5. **Fallbacks:** if Gemini is down or out of free requests, the game keeps going: the words are scored instead of the drawing, and a turn that can't be heard at all ends with no points lost.
 6. **Storybook:** at game end, all rounds are turned into titled chapters with narration.
 
 If an image is blocked by safety filters, the game shows a **refusal card** instead of an error, because "the AI refused to draw that" is also funny.

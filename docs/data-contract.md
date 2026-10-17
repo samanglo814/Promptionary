@@ -49,7 +49,7 @@ type Target = {
 
 // What the AI made of one description. Returned by POST /submit and sent inside round_result.
 type SubmitResult = {
-  transcript: string;     // what Gemini heard (or the typed text)
+  transcript: string;     // what Gemini heard
   imageUrl: string;       // what the AI drew; "" when refused
   targetImageUrl: string; // the original secret image
   score: number;          // 0–100 integer; 0 when refused
@@ -181,7 +181,7 @@ All of these live in [`server/src/config.ts`](../server/src/config.ts).
 - `/submit` is accepted until `endsAt` plus a 3s grace, so an upload that started before the buzzer still counts.
 - A **timed-out** turn still sends `round_result`: `transcript: ""`, `score: 0`, a placeholder `imageUrl` ("*crickets*"), a caption about the silence, and the guesses (which still score).
 - `SubmitResult.score` is always the raw 0–100 match score; points are in `breakdown`.
-- If **transcribing** fails, the describer gets their turn back (with 10s more the first time only), guesses already locked in stay, and guessing stays open at least as long as the describing deadline. If **drawing or judging** fails, the turn still ends: the description and guesses are scored by shared words, with a placeholder image and a caption saying the AI ran out of ink.
+- If **transcribing** fails because the AI is **out of requests**, the turn ends right away (0 points for the describer, guesses still scored). Any other transcribing failure gives the describer their turn back (with 10s more the first time only), guesses already locked in stay, and guessing stays open at least as long as the describing deadline. If **drawing or judging** fails, the turn still ends: the description and guesses are scored by shared words, with a placeholder image and a caption saying the AI ran out of ink.
 - A guesser who **refreshes** and rejoins mid-turn gets `describing` again (to reopen the guess box) and `guess_locked` if they already guessed.
 - If a **describer disconnects** before submitting, they have 5s to rejoin (see `join`) before their turn is skipped.
 - **Dropped connections** (a locked phone, a Wi-Fi or tunnel blip) use Socket.io connection state recovery: a socket that reconnects within 2 minutes comes back with the same id (`socket.recovered` is true) and gets the events it missed, so it doesn't rejoin.
@@ -245,7 +245,7 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 Notes:
 - `standings` arrive sorted with `rank` set; the scoreboard still sorts by `rank`, so mock data works too.
 - The describer gets `your_turn` **and** everyone gets `describing`. Only `your_turn` contains the target image, so other phones can't peek.
-- `banned_buzz` is sent while processing the transcript (the server does the real banned-word check, #12). The phone's typed-mode warning is a convenience only.
+- `banned_buzz` is sent while processing the transcript (the server does the banned-word check, #12).
 
 ---
 
@@ -260,7 +260,7 @@ Called by the describer's phone during `describing`. The server transcribes (if 
 | `roomCode` | text | e.g. `FROG` |
 | `playerId` | text | from `joined.player.id` |
 | `audio` | file | **voice**: `description.wav`, 16 kHz mono 16-bit PCM, from every browser ([`web/lib/mic.ts`](../web/lib/mic.ts)). Up to 20s (about 640 KB). |
-| `text` | text | **typed fallback**: up to 200 characters. If present, skip transcription and use it as the transcript. |
+| `text` | text | **bots and tests only**: up to 200 characters, used as the transcript. The phone never sends it: players always talk, because the others guess from hearing them. |
 
 Exactly one of `audio` or `text` is sent.
 
@@ -274,7 +274,7 @@ Exactly one of `audio` or `text` is sent.
 | `403` | not this player's turn, already submitted, or describing time is over | shows the server's `error` |
 | `404` | room not found, or the turn was skipped | shows the server's `error` |
 | `502` | transcribing failed after a retry | shows the `error`, with **Send again** (same recording) and **Record again**. The server re-sends `your_turn`, with 10s more the first time only. |
-| `503` | the AI is out of free requests | shows the `error` and switches to typing, which still works (scored by shared words) |
+| `503` | the AI is out of free requests | shows the `error`. The turn is already over: `round_result` follows right away with 0 points for the describer (no penalty), and the guesses scored by shared words. |
 
 Error responses have the body `{ error: string }`, a message ready to show the player.
 

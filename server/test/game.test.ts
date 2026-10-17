@@ -175,7 +175,7 @@ describe("game server", () => {
     await flakyServer.close();
   });
 
-  test("when the AI is out of quota, the describer is asked to type, and typing still works", async () => {
+  test("when the AI is out of quota, the turn ends right away and guesses still score", async () => {
     const fake = createFakeAi(0);
     const outOfQuota = () => Promise.reject(new AiOutOfQuotaError("text-model", Date.now() + 60_000));
     const broke: Ai = {
@@ -188,19 +188,21 @@ describe("game server", () => {
     const { host, code, players, closeAll } = await setUp(brokeServer.url, ["Sam", "Ana"]);
     host.socket.emit("start_game");
     const { target } = await players[0]!.client.waitFor("your_turn");
+    players[1]!.client.socket.emit("guess", { text: target.id.replace(/-/g, " ") });
+    await players[1]!.client.waitFor("guess_locked");
 
     const originalError = console.error;
     console.error = () => {};
+    const started = Date.now();
     const voice = await submit(brokeServer.url, { roomCode: code, playerId: players[0]!.id, audio: fakeAudio() });
     assert.equal(voice.status, 503);
-    assert.match((voice.body as { error: string }).error, /Type/);
-
-    const typed = await submit(brokeServer.url, { roomCode: code, playerId: players[0]!.id, text: target.id.replace(/-/g, " ") });
-    console.error = originalError;
-    assert.equal(typed.status, 200);
+    assert.match((voice.body as { error: string }).error, /out of free requests/);
     const turn = await host.waitFor("round_result");
-    assert.ok(turn.result.score > 0, "scored by shared words");
-    assert.match(turn.result.caption, /ran out of ink/);
+    console.error = originalError;
+    assert.ok(Date.now() - started < 1_000, "no waiting for the turn's timer");
+    assert.equal(turn.breakdown.total, 0, "the describer gets 0, not a penalty");
+    assert.match(turn.result.caption, /out of free requests/);
+    assert.ok(turn.guesses[0]!.accuracy > 0, "the guess is scored by shared words");
     closeAll();
     await brokeServer.close();
   });

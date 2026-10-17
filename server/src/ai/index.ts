@@ -38,7 +38,7 @@ export type Ai = {
 };
 
 // The AI is out of requests for now (e.g. the free tier's daily limit). Not worth retrying:
-// the server falls back to word matching, and asks voice describers to type instead.
+// the server falls back to word matching (or, without a transcript, ends the turn).
 export class AiOutOfQuotaError extends Error {
   constructor(
     readonly model: string,

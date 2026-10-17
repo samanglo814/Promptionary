@@ -5,7 +5,9 @@ import { SubmitError } from "../rooms/Room.js";
 import type { RoomStore } from "../rooms/RoomStore.js";
 import type { Description } from "../types.js";
 
-// POST /submit: the describer's phone sends a recording or typed text (docs/data-contract.md, section 4).
+// POST /submit: the describer's phone sends a recording (docs/data-contract.md, section 4).
+// `text` instead of audio is for the bot game and tests only: players always talk, since the others guess
+// from hearing them.
 // Errors reply with { error: string } and the status codes from the contract.
 export function submitRouter(rooms: RoomStore, config: GameConfig): Router {
   const upload = multer({

@@ -49,7 +49,7 @@ To add a target, add an entry to `targets.json` (`id` in kebab-case), run the sc
 
 With `GEMINI_API_KEY` set in `.env`, rounds go through Gemini ([`src/ai/gemini.ts`](src/ai/gemini.ts)):
 
-1. **Transcribe** the recording (typed text skips this) with `GEMINI_TRANSCRIBE_MODEL`. Phones record WAV (16 kHz mono, [`web/lib/mic.ts`](../web/lib/mic.ts)), a format Gemini accepts from every browser.
+1. **Transcribe** the recording with `GEMINI_TRANSCRIBE_MODEL`. Phones record WAV (16 kHz mono, [`web/lib/mic.ts`](../web/lib/mic.ts)), a format Gemini accepts from every browser.
 2. The room checks **banned words**.
 3. **Draw** the transcript nearly verbatim with the image model. A blocked image becomes a refusal (`refused: true`), not an error.
 4. **Judge** in one call per turn, once guessing has closed: the text model compares the target and the drawing (score and caption) and rates every guess 0–100 against the target's `prompt`. A turn with nothing drawn (silence, a refusal) only needs the guesses scored, and a turn with no guesses and nothing drawn needs no call.
@@ -57,7 +57,8 @@ With `GEMINI_API_KEY` set in `.env`, rounds go through Gemini ([`src/ai/gemini.t
 **Free tier.** Google's free tier allows about 20 requests a day per model, so a voice turn costs one transcription (on the lighter `gemini-flash-lite-latest` by default, which has its own allowance) and one judging call (`GEMINI_TEXT_MODEL`). If the transcription model is missing or out of quota, the text model transcribes instead.
 
 **When the AI fails.** Each call has a 30s timeout and one retry, except errors that won't go away: a bad key, no credits, or out of quota (`429`). After a `429` the server stops calling that model until Google says it's back (no wasted requests) and the game falls back:
-- **Transcribing fails:** `/submit` returns `502` (`503` when out of quota, and the phone switches to typing). The describer gets 10 more seconds the first time only, so a broken AI can't keep one turn going forever.
+- **Transcribing fails:** `/submit` returns `502`, and the phone offers **Send again**. The describer gets 10 more seconds the first time only, so a broken AI can't keep one turn going forever.
+- **Out of requests while transcribing:** retrying can't help, so `/submit` returns `503` and the turn ends right away: 0 points for the describer (no penalty), guesses still scored.
 - **Drawing or judging fails:** the turn still ends. The description and the guesses are scored by shared words with the target's `prompt` ([`src/ai/wordMatch.ts`](src/ai/wordMatch.ts)), with an "ran out of ink" placeholder and caption.
 Drawn images are shrunk to 768px JPEGs (about 100 KB instead of a 1 MB PNG), kept in memory, and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` / `GEMINI_IMAGE_MODEL`.
 
@@ -65,7 +66,7 @@ The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=po
 
 `npm run live:gemini` plays a few rounds against the real API and saves the drawings to `live-output/`. It spends about 6 requests of the daily allowance.
 
-Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Typed text is used as the transcript, audio gets a canned one, the score is a hash of the words, guesses score by the words they share with the target's `prompt`, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
+Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Text (sent by the bots and tests, never by phones) is used as the transcript, audio gets a canned one, the score is a hash of the words, guesses score by the words they share with the target's `prompt`, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
 
 ## What's fake for now
 

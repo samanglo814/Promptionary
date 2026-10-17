@@ -1,4 +1,4 @@
-// The real banned-word check (the phone's typed-mode warning is only a convenience).
+// The banned-word check, run on the transcript.
 
 function words(text: string): string[] {
   return text.toLowerCase().match(/[a-z0-9]+/g) ?? [];

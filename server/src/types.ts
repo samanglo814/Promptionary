@@ -141,7 +141,7 @@ export type ClientToServerEvents = {
   guess: (p: { text: string }) => void;
 };
 
-// What a player handed in: a recording or typed text (exactly one).
+// What a player handed in: a recording (text is for the bot game and tests only).
 export type Description =
   | { kind: "audio"; audio: Buffer; mimeType: string }
   | { kind: "text"; text: string };

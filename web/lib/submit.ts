@@ -1,6 +1,6 @@
 // Sends a player's description to the server's /submit endpoint and gets back the
 // round result (transcript, AI image, score, caption).
-// A description can be a voice recording (submitAudio) or typed text (submitText).
+// A description is always a voice recording: the other players guess from hearing it.
 //
 // Until the server exists, both return the mock result instead, so the frontend
 // can be built and tested on its own.
@@ -13,14 +13,13 @@ import { mockResult, type SubmitResult } from "./mocks";
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL;
 
 // Pretend to be the server: wait 1.5s like the AI is "thinking", then return fake data.
-async function fakeSubmit(transcript?: string): Promise<SubmitResult> {
+async function fakeSubmit(): Promise<SubmitResult> {
   await new Promise((resolve) => setTimeout(resolve, 1500));
-  // If we know what they said (typed text), show it back so testing feels real.
-  return transcript ? { ...mockResult, transcript } : mockResult;
+  return mockResult;
 }
 
-// /submit said no. `status` is the HTTP status: 503 = the AI is out of free requests (type instead),
-// 502 = the AI had a problem (send again), 403 = not your turn or time's up.
+// /submit said no. `status` is the HTTP status: 503 = the AI is out of free requests (the turn
+// is over), 502 = the AI had a problem (send again), 403 = not your turn or time's up.
 // `message` is the server's own explanation, ready to show the player.
 export class SubmitError extends Error {
   constructor(
@@ -63,19 +62,5 @@ export async function submitAudio(
   // The recording is always WAV (see lib/mic.ts).
   const form = new FormData();
   form.append("audio", audio, "description.wav");
-  return send(form, roomCode, playerId);
-}
-
-// Typed: sends the text instead of a file. Same endpoint, so the server only
-// needs one /submit: if there's a "text" field it skips transcription.
-export async function submitText(
-  text: string,
-  roomCode: string,
-  playerId: string,
-): Promise<SubmitResult> {
-  if (!SERVER_URL) return fakeSubmit(text);
-
-  const form = new FormData();
-  form.append("text", text);
   return send(form, roomCode, playerId);
 }

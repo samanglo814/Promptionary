@@ -2,7 +2,7 @@ import type { Ai } from "./index.js";
 import { wordMatchScore } from "./wordMatch.js";
 
 // A stand-in for Gemini so the whole game can run without an API key.
-// - Typed text is used as-is; audio becomes a canned transcript.
+// - Text (bots and tests only) is used as-is; audio becomes a canned transcript.
 // - The score is a stable hash of the transcript, so the same words always score the same.
 // - Mentioning "goose" makes the AI "refuse", to test the refusal card.
 // - Guesses score by the words they share with the target's description.

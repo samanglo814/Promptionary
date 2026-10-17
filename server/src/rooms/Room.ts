@@ -33,7 +33,8 @@ import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
   judges them together (fewer calls, for the free tier), and the reveal follows.
 
   If the AI can't help (down, or out of free requests), the game keeps going: drawings and guesses are
-  scored by shared words instead (wordMatchScore), and a voice describer is asked to type.
+  scored by shared words instead (wordMatchScore). If it can't even transcribe, the describer gets one
+  retry; out of requests, the turn ends with 0 points for them (guesses still score).
 */
 
 export type Phase =
@@ -420,10 +421,13 @@ export class Room {
     } catch (err) {
       if (this.closed || this.turn !== turn) throw new SubmitError(404, "The room closed.");
       console.error(`[${this.code}] Transcribing failed:`, err);
+      // Out of requests: retrying can't help, so end the turn now instead of making everyone wait.
+      if (err instanceof AiOutOfQuotaError) {
+        this.endUndescribed(turn, "The AI is out of free requests, so it couldn't hear a thing. No points lost!");
+        throw new SubmitError(503, "The AI is out of free requests for now, so this turn can't be scored. Sorry!");
+      }
       this.retryDescribing(turn);
-      throw err instanceof AiOutOfQuotaError
-        ? new SubmitError(503, "The AI is out of free requests for now. Type your description instead!")
-        : new SubmitError(502, "The AI couldn't listen to that. Send it again, or type it!");
+      throw new SubmitError(502, "The AI couldn't listen to that. Send it again!");
     }
     if (this.closed || this.turn !== turn) throw new SubmitError(404, "The room closed.");
 
@@ -472,12 +476,18 @@ export class Room {
   private timeUp() {
     const turn = this.turn;
     if (!turn) return;
+    this.endUndescribed(turn, "Total silence. The AI drew exactly what you said.");
+  }
+
+  // Ends a turn with no description: 0 points for the describer, guesses still scored.
+  private endUndescribed(turn: Turn, caption: string) {
+    this.clearTimer();
     const drawing: Drawing = {
       imageUrl: "https://placehold.co/512x512/png?text=*crickets*",
       score: 0,
       gotRight: [],
       gotWrong: [],
-      caption: "Total silence. The AI drew exactly what you said.",
+      caption,
     };
     turn.drawing = { transcript: "", sketch: { kind: "final", drawing }, bannedHits: 0, described: false };
     this.phase = "processing";
