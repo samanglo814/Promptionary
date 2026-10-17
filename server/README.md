@@ -28,7 +28,7 @@ Phone browsers only allow the mic on `https://` pages, so for voice on phones ru
 
 ## Tweak the game
 
-Every rule (phase timings, player limits, rounds, banned-word penalty) is in [`src/config.ts`](src/config.ts).
+Every rule (phase timings, player limits, rounds, every number in the points) is in [`src/config.ts`](src/config.ts). The points math is in [`src/scoring.ts`](src/scoring.ts), with unit tests in `test/scoring.test.ts`.
 Targets (image prompt, banned words, difficulty) are in [`data/targets.json`](data/targets.json).
 
 ## Target images
@@ -51,6 +51,7 @@ With `GEMINI_API_KEY` set in `.env`, rounds go through Gemini ([`src/ai/gemini.t
 2. The room checks **banned words**.
 3. **Draw** the transcript nearly verbatim with the image model. A blocked image becomes a refusal (`refused: true`), not an error.
 4. **Score and caption** in one call: the text model compares the target and the drawing and returns JSON.
+5. **Score the guesses** in one call per turn: the text model rates every guess 0–100 against the target's `prompt`. If that fails, the server scores them by shared words instead ([`src/ai/wordMatch.ts`](src/ai/wordMatch.ts)), so the turn still ends.
 
 Each call has a 30s timeout and one retry (not for errors like a bad key or no credits). If it still fails, `/submit` returns 502 and the describer gets their turn back.
 Drawn images are shrunk to 768px JPEGs (about 100 KB instead of a 1 MB PNG), kept in memory, and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_IMAGE_MODEL`.
@@ -59,7 +60,7 @@ The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=po
 
 `npm run live:gemini` plays a few rounds against the real API and saves the drawings to `live-output/`.
 
-Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Typed text is used as the transcript, audio gets a canned one, the score is a hash of the words, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
+Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Typed text is used as the transcript, audio gets a canned one, the score is a hash of the words, guesses score by the words they share with the target's `prompt`, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
 
 ## What's fake for now
 

@@ -26,6 +26,15 @@ export function registerSockets(io: GameIo, rooms: RoomStore) {
       if (error) socket.emit("join_error", { reason: error });
     });
 
+    socket.on("guess", (payload) => {
+      const { role, code, playerId } = socket.data;
+      const room = role === "player" && code ? rooms.get(code) : undefined;
+      if (!room || !playerId) return socket.emit("guess_error", { reason: "not_now" });
+      const text = typeof payload?.text === "string" ? payload.text : "";
+      const error = room.guess(playerId, text);
+      if (error) socket.emit("guess_error", { reason: error });
+    });
+
     socket.on("start_game", () => {
       const error = hostRoom()?.start();
       if (error) socket.emit("error", { message: error });

@@ -1,0 +1,127 @@
+LOST IN DESCRIPTION: DESIGN BRIEF (SCORING UPDATE)
+
+THE GAME IN ONE LINE
+One player (the prompter) describes a secret image out loud without saying the banned words. The AI draws what it heard. Everyone else (spectators) types one guess at what the image is. Two rounds; everyone prompts once per round. Round 2 is worth 1.5x.
+
+SCREENS
+- Host: the TV or laptop everyone watches. Landscape, readable from across a room.
+- Phone: portrait. The phone shows a different screen depending on the player's role: prompter or spectator.
+
+PLAYERS
+2 to 8 players. Names up to 16 characters. Layouts must fit 8 avatars.
+
+------------------------------------------------------------
+SCORING (WHAT THE GRAPHICS NEED TO SHOW)
+
+Prompter, per turn (round 1 max = 1000, round 2 max = 1500)
+- Accuracy: up to 700. How close the AI drawing is to the secret image (AI match score 0-100%).
+- Clarity bonus: up to 200. How well the spectators guessed.
+- Speed bonus: up to 100. Time left when the prompter finishes. Only counts if accuracy is 40% or more.
+- Banned word: -100 for each banned word said.
+- The total is multiplied by 1.5 in round 2.
+
+Spectator, per guess
+- One typed guess per turn, locked in once.
+- Points = guess accuracy x speed. A guess loses up to 30% of its value as time passes, so speed matters but accuracy matters more.
+- Max per guess depends on player count (example: 4 players = 220 in round 1, 335 in round 2).
+- The guess window is 25 seconds from the start of the description.
+
+Balance
+Prompting is about 60% of a perfect game and spectating about 40%. Biggest possible total is about 4,170, so design score displays for 4 digits.
+
+Tiebreak: higher round 2 total, then higher spectator total.
+
+------------------------------------------------------------
+GAME FLOW AND SCREENS
+
+1. LOBBY
+Host: room code (4 letters), QR code, player list (up to 8).
+Phone: join form (room code + name), then "You're in" waiting state.
+
+2. ROUND INTRO
+Host: big "ROUND 1" or "ROUND 2". Round 2 needs a strong "POINTS x1.5" badge and a comeback message showing the gap to the leader (example: "Sam leads by 480. Anyone can catch up.").
+Phone: same message, smaller.
+
+3. TURN INTRO (3 seconds)
+Host: "Next up: [name]" with avatar, round number and multiplier badge.
+Phone (prompter): "Your turn. Get ready."
+Phone (spectators): "Get ready to guess."
+
+4. DESCRIBING (20 seconds for the prompter, 25 for guesses)
+Host:
+- Prompter name and a large countdown timer.
+- Row of spectator avatars with a state: still thinking / locked in (show who has locked in, never their guess).
+- "BUZZ" flash when a banned word is said.
+Phone (prompter):
+- Secret image, banned word chips, mic button, countdown.
+- Speed bonus meter (100 → 0) that drains with the timer.
+- Clear "Done" button: finishing early earns the speed bonus.
+Phone (spectator):
+- Text box for one guess and a "Lock in" button. Make it obvious there is only one try (confirmation step or slide to lock).
+- Speed meter showing the guess's current value, draining from 100% to 70%.
+- After locking: "Locked in at 92%" and the guess shown read-only.
+- If the window closes with no guess: "No guess. 0 points."
+
+5. PROCESSING (as long as the AI takes)
+Host: "The AI is drawing..." animation. Spectators who haven't guessed can still lock in until the 25-second window closes; keep the avatar lock-in row visible.
+Phone (spectators): guess box stays open until the window closes.
+Phone (prompter): "Sent! Look at the big screen."
+
+6. REVEAL (about 8 seconds, step by step)
+Host, in this order:
+a. The secret image and the AI drawing side by side.
+b. Accuracy bar filling up to its value (example: 80% → 560 pts).
+c. Spectator guesses appear one by one (name, guess text, accuracy %, points). Highlight the best guess.
+d. Prompter breakdown stacking into a total:
+   Accuracy +560
+   Clarity +120
+   Speed +25
+   Banned word -100 (red, only if it happened)
+   x1.5 (round 2 only)
+   = TURN TOTAL
+e. Roast caption from the AI.
+Phone (prompter): their turn total and breakdown.
+Phone (spectator): their guess, accuracy, speed % and points earned.
+
+7. SCOREBOARD (about 6 seconds, after each turn)
+Host: ranked list with total score, points gained this turn (+235), and rank movement arrows. Animate the reordering.
+Optional small split per player: prompter points vs spectator points.
+Phone: "You're #3, 140 behind #2."
+
+8. FINAL PODIUM (game over)
+Host: top 3 podium. Each finalist gets a bar split into prompter points and spectator points, plus awards (examples: Closest Drawing, Sharpest Guesser, Fastest Lock-in, Most Wrong Masterpiece). Show the tiebreak reason if one was needed.
+Phone: final rank and personal breakdown.
+
+9. HALL OF SHAME (after podium)
+Host: worst AI misses, worst words, night stats (unchanged from the current design).
+
+------------------------------------------------------------
+COMPONENTS TO DESIGN
+
+- Score chip: 4 digits, plus a "+235" delta variant.
+- Points breakdown stack: line items (positive, negative, multiplier) adding up to a total.
+- Multiplier badge: "x1.5", used on round 2 screens.
+- Countdown timer: large on host, compact on phone.
+- Speed meter: prompter (100 → 0) and spectator (100% → 70%) versions.
+- Accuracy bar: 0-100% with points label.
+- Banned word chip: normal, plus "said" or buzzed state.
+- Avatar with states: prompting, thinking, locked in, no guess.
+- Guess card: name, guess text (up to ~60 characters), accuracy %, points, "best guess" highlight.
+- Rank row: position, avatar, name, total, delta, movement arrow.
+- Lock-in control for the single guess.
+- Refusal card: when the AI refuses to draw, the prompter gets 0 accuracy.
+
+KEY STATES TO COVER
+- Prompter says a banned word (BUZZ).
+- Prompter times out with no description (0 points, "crickets" image).
+- AI refuses to draw.
+- Spectator never guesses.
+- Every spectator guesses perfectly / nobody guesses at all.
+- Round 2 comeback: someone overtakes the leader.
+- 2-player game (one spectator) and 8-player game (seven spectators).
+
+DESIGN PRIORITIES
+1. Spectators always have something to do and can see their score climbing.
+2. Round 2 should feel bigger: multiplier everywhere, comeback message, louder reveals.
+3. Points must be readable: every total breaks down into its parts so the score feels fair.
+4. Host screen is the stage. Phones are controllers and personal scorecards.

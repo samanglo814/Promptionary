@@ -43,7 +43,7 @@ const noSubscribe = () => () => {};
 type Phase = "lobby" | "status" | "reveal" | "scoreboard" | "podium" | "shame";
 
 // What the status screen says (see StatusScreen).
-type Status = { title: string; subtitle?: string; endsAt?: number };
+type Status = { title: string; subtitle?: string; endsAt?: number; detail?: string };
 
 export default function HostPage() {
   // Players currently in the room. Starts empty, fills in over time.
@@ -90,17 +90,41 @@ export default function HostPage() {
         return players;
       });
     });
-    s.on("round_intro", ({ round, totalRounds, describer }) => {
-      setStatus({ subtitle: `Round ${round} of ${totalRounds}`, title: `Next up: ${describer.name}` });
+    s.on("round_start", ({ round, totalRounds, multiplier, leader, gap }) => {
+      setStatus({
+        subtitle: `Round ${round} of ${totalRounds}`,
+        title: multiplier > 1 ? `Points x${multiplier}!` : `Round ${round}`,
+        detail: leader ? `${leader.name} leads by ${gap}. Anyone can catch up!` : "Everyone describes once. Everyone else guesses!",
+      });
+      show("status");
+    });
+    s.on("turn_intro", ({ round, turn, turnsInRound, multiplier, describer }) => {
+      const bonus = multiplier > 1 ? ` · x${multiplier}` : "";
+      setStatus({ subtitle: `Round ${round} · Turn ${turn} of ${turnsInRound}${bonus}`, title: `Next up: ${describer.name}` });
       show("status");
     });
     s.on("describing", ({ describer, endsAt }) => {
-      setStatus({ subtitle: "Shh! No peeking", title: `${describer.name} is describing…`, endsAt });
+      setStatus({
+        subtitle: "Shh! No peeking",
+        title: `${describer.name} is describing…`,
+        endsAt,
+        detail: "Type your guess on your phone!",
+      });
       show("status");
+    });
+    // Who has locked in a guess (never what they guessed). Updates the status screen in place.
+    s.on("guesses_locked", ({ playerIds, open }) => {
+      const locked = `${playerIds.length} ${playerIds.length === 1 ? "guess" : "guesses"} locked in`;
+      setStatus((prev) => ({ ...prev, detail: open ? locked : `${locked}. Guessing closed!` }));
     });
     s.on("banned_buzz", () => playBuzzer());
     s.on("processing", ({ describer }) => {
-      setStatus({ subtitle: `${describer.name}'s description is in`, title: "The AI is drawing… 🎨" });
+      // Keep the "guesses locked in" line: guessing can still be open while the AI draws.
+      setStatus((prev) => ({
+        subtitle: `${describer.name}'s description is in`,
+        title: "The AI is drawing… 🎨",
+        detail: prev.detail,
+      }));
       show("status");
     });
     s.on("round_result", ({ playerName, result }) => {

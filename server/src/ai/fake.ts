@@ -1,9 +1,11 @@
 import type { Ai } from "./index.js";
+import { wordMatchScore } from "./wordMatch.js";
 
 // A stand-in for Gemini so the whole game can run without an API key.
 // - Typed text is used as-is; audio becomes a canned transcript.
 // - The score is a stable hash of the transcript, so the same words always score the same.
 // - Mentioning "goose" makes the AI "refuse", to test the refusal card.
+// - Guesses score by the words they share with the target's description.
 
 const captions = [
   "Bold of you to call that a description.",
@@ -51,6 +53,11 @@ export function createFakeAi(delayMs: number): Ai {
         gotWrong: ["literally everything else"],
         caption: captions[h % captions.length]!,
       };
+    },
+
+    async scoreGuesses(target, guesses) {
+      await wait();
+      return guesses.map((guess) => wordMatchScore(target.prompt, guess));
     },
   };
 }

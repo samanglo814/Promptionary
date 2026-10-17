@@ -8,8 +8,14 @@
 // A person in the room.
 export type Player = { id: string; name: string; score: number };
 
-// A player on the scoreboard: their total plus what they earned in the round that just ended.
-export type Standing = Player & { lastRound: number };
+// A player on the scoreboard. Standings are sent sorted, best first, with ties already broken.
+export type Standing = Player & {
+  lastTurn: number; // points earned in the turn that just ended (describing or guessing)
+  prompterPoints: number; // all points from describing
+  spectatorPoints: number; // all points from guessing
+  finalRoundPoints: number; // points earned in the last round (the first tiebreak)
+  rank: number; // 1 = first; players tied on score and both tiebreaks share a rank
+};
 
 // The secret image a player has to describe, and the words they can't say.
 export type Target = {
@@ -30,6 +36,30 @@ export type SubmitResult = {
   refused?: boolean;
 };
 
+// How the describer's points for one turn add up. Each line is before the multiplier;
+// total = (accuracy + clarity + speed − bannedPenalty, never below 0) × multiplier.
+export type PrompterBreakdown = {
+  accuracy: number;
+  clarity: number;
+  speed: number;
+  bannedPenalty: number;
+  multiplier: number;
+  total: number;
+};
+
+// One guess, scored. points = max for this turn × accuracy × speed.
+export type GuessResult = {
+  playerId: string;
+  playerName: string;
+  text: string;
+  accuracy: number; // 0–100, how close the guess is to the secret image
+  speed: number; // 70–100, how much of its value the guess kept by being early
+  points: number;
+};
+
+// An end-of-game award. imageUrl is "" for awards without a picture.
+export type Award = { title: string; playerName: string; imageUrl: string };
+
 // The night's worst moments, for the Hall of Shame screen.
 export type HallOfShame = {
   stats: {
@@ -47,6 +77,12 @@ export type HallOfShame = {
   worstWords: { word: string; avgScore: number }[];
 };
 
+export type GuessErrorReason =
+  | "not_now" // no guessing open (between turns, or the window closed)
+  | "describer" // the describer can't guess their own image
+  | "already_guessed" // one guess per turn
+  | "invalid_guess"; // blank or too long
+
 export type JoinErrorReason =
   | "room_not_found"
   | "name_taken"
@@ -60,14 +96,36 @@ export type ServerToClientEvents = {
   joined: (p: { player: Player; code: string }) => void;
   join_error: (p: { reason: JoinErrorReason }) => void;
   your_turn: (p: { target: Target; endsAt: number }) => void;
+  guess_locked: (p: { text: string; speed: number }) => void;
+  guess_error: (p: { reason: GuessErrorReason }) => void;
   players: (p: { players: Player[] }) => void;
-  round_intro: (p: { round: number; totalRounds: number; describer: Player }) => void;
-  describing: (p: { describer: Player; endsAt: number }) => void;
+  round_start: (p: {
+    round: number;
+    totalRounds: number;
+    multiplier: number;
+    leader: Player | null; // null when nobody leads (round 1, or a tie for first)
+    gap: number; // leader's lead over second place
+  }) => void;
+  turn_intro: (p: {
+    round: number;
+    totalRounds: number;
+    turn: number;
+    turnsInRound: number;
+    multiplier: number;
+    describer: Player;
+  }) => void;
+  describing: (p: { describer: Player; endsAt: number; guessEndsAt: number }) => void;
+  guesses_locked: (p: { playerIds: string[]; open: boolean }) => void;
   banned_buzz: (p: { playerId: string; word: string }) => void;
   processing: (p: { describer: Player }) => void;
-  round_result: (p: { playerName: string; result: SubmitResult }) => void;
+  round_result: (p: {
+    playerName: string;
+    result: SubmitResult;
+    breakdown: PrompterBreakdown;
+    guesses: GuessResult[];
+  }) => void;
   scoreboard: (p: { standings: Standing[] }) => void;
-  game_over: (p: { standings: Standing[] }) => void;
+  game_over: (p: { standings: Standing[]; awards: Award[] }) => void;
   hall_of_shame: (p: { data: HallOfShame }) => void;
   error: (p: { message: string }) => void;
 };
@@ -78,6 +136,8 @@ export type ClientToServerEvents = {
   next: () => void;
   // playerId is optional: send the id from an earlier `joined` to rejoin after a refresh.
   join: (p: { code: string; name: string; playerId?: string }) => void;
+  // Everyone but the describer: one guess per turn.
+  guess: (p: { text: string }) => void;
 };
 
 // What a player handed in: a recording or typed text (exactly one).

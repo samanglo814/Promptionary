@@ -8,8 +8,9 @@
 // useSyncExternalStore = read something from outside React (here: the URL) safely
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { mockTarget, type Player, type SubmitResult, type Target } from "@/lib/mocks";
-import { SERVER_URL, connect, joinErrorText, type GameSocket } from "@/lib/socket";
+import { SERVER_URL, connect, guessErrorText, joinErrorText, type GameSocket } from "@/lib/socket";
 import DescribeScreen from "./DescribeScreen";
+import GuessScreen from "./GuessScreen";
 
 // Read ?code= from the URL. Only works in the browser (window doesn't exist on the
 // server), so useSyncExternalStore below uses "" on the server and this in the browser.
@@ -19,8 +20,11 @@ const codeFromUrl = () =>
 const noSubscribe = () => () => {};
 
 // Which screen the phone is showing after joining.
-// With a server, socket events decide this (e.g. "your_turn", "round_intro").
-type Phase = "waiting" | "describing" | "sent";
+// With a server, socket events decide this (e.g. "your_turn", "turn_intro").
+//   describing = my turn: secret image + mic
+//   sent       = I've described it
+//   guessing   = someone else's turn: type one guess
+type Phase = "waiting" | "describing" | "sent" | "guessing";
 
 // Saved in the browser after joining, so a refreshed phone rejoins as the same player.
 type Session = { code: string; name: string; playerId: string };
@@ -75,6 +79,12 @@ export default function PlayerJoin() {
   const [waitingText, setWaitingText] = useState("Waiting for the host to start…");
   // Why joining failed (or why the game ended), shown on the join form.
   const [joinError, setJoinError] = useState("");
+  // Guessing on someone else's turn: who's describing, when guessing closes, and my locked-in guess.
+  const [describerName, setDescriberName] = useState("");
+  const [guessEndsAt, setGuessEndsAt] = useState<number | undefined>(undefined);
+  const [lockedGuess, setLockedGuess] = useState<{ text: string; speed: number } | null>(null);
+  const [guessSending, setGuessSending] = useState(false);
+  const [guessError, setGuessError] = useState("");
 
   useEffect(() => {
     if (!SERVER_URL) return;
@@ -83,6 +93,8 @@ export default function PlayerJoin() {
     let myId: string | null = null;
     // True while an automatic rejoin is in flight, so its failure can be silent.
     let rejoining = false;
+    // True once my guess for this turn is locked in. A plain variable for the same reason as myId.
+    let guessed = false;
 
     // On first connect, and again after any reconnect (new socket), rejoin if we were in a room.
     // A saved session for a different room (e.g. scanned a new QR code) is ignored.
@@ -116,20 +128,44 @@ export default function PlayerJoin() {
       setEndsAt(endsAt);
       setPhase("describing");
     });
-    s.on("round_intro", ({ round, totalRounds, describer }) => {
+    s.on("round_start", ({ round, totalRounds, multiplier }) => {
       setPhase("waiting");
+      setWaitingText(`Round ${round} of ${totalRounds}${multiplier > 1 ? `: points x${multiplier}!` : ""}`);
+    });
+    s.on("turn_intro", ({ round, describer }) => {
+      setPhase("waiting");
+      guessed = false;
+      setLockedGuess(null);
+      setGuessSending(false);
+      setGuessError("");
       setWaitingText(
-        describer.id === myId
-          ? `Round ${round} of ${totalRounds}: you're up! Get ready…`
-          : `Round ${round} of ${totalRounds}: ${describer.name} is up`,
+        describer.id === myId ? `Round ${round}: you're up! Get ready…` : `Round ${round}: ${describer.name} is up. Get ready to guess!`,
       );
     });
-    s.on("describing", ({ describer }) => {
-      if (describer.id !== myId) setWaitingText(`${describer.name} is describing…`);
+    s.on("describing", ({ describer, guessEndsAt }) => {
+      if (describer.id === myId) return;
+      setDescriberName(describer.name);
+      setGuessEndsAt(guessEndsAt);
+      setPhase("guessing");
+    });
+    s.on("guess_locked", (guess) => {
+      guessed = true;
+      setLockedGuess(guess);
+      setGuessSending(false);
+    });
+    s.on("guess_error", ({ reason }) => {
+      setGuessSending(false);
+      setGuessError(guessErrorText[reason]);
+    });
+    s.on("guesses_locked", ({ open }) => {
+      // Guessing closed. Keep showing a locked-in guess; otherwise go back to waiting.
+      if (open || guessed) return;
+      setPhase((p) => (p === "guessing" ? "waiting" : p));
+      setWaitingText("Guessing closed. Look at the big screen!");
     });
     s.on("round_result", () => {
-      // My turn ran out before I sent anything: stop showing the describe screen.
-      setPhase((p) => (p === "describing" ? "waiting" : p));
+      // My turn ran out before I sent anything, or guessing is over: back to waiting.
+      setPhase((p) => (p === "describing" || p === "guessing" ? "waiting" : p));
       setWaitingText("Look at the big screen!");
     });
     s.on("processing", ({ describer }) => {
@@ -192,6 +228,24 @@ export default function PlayerJoin() {
         onSubmitted={(r) => {
           setResult(r);
           setPhase("sent");
+        }}
+      />
+    );
+  }
+
+  // Someone else's turn: guess what they're describing (or show my locked-in guess).
+  if (me && phase === "guessing") {
+    return (
+      <GuessScreen
+        describerName={describerName}
+        guessEndsAt={guessEndsAt}
+        locked={lockedGuess}
+        sending={guessSending}
+        error={guessError}
+        onGuess={(text) => {
+          setGuessError("");
+          setGuessSending(true);
+          socket?.emit("guess", { text });
         }}
       />
     );
