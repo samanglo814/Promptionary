@@ -45,6 +45,8 @@ export type Phase =
 
 // Phases the host's "next" button can cut short.
 const skippable: Phase[] = ["round_start", "reveal", "scoreboard", "game_over"];
+// The AI failing this many times in one turn (e.g. out of quota) ends the turn instead of retrying again.
+const MAX_AI_FAILURES = 2;
 
 type PlayerState = Player & {
   socketId: string | null; // null while disconnected
@@ -64,6 +66,7 @@ type Turn = {
   startedAt: number; // when describing started
   endsAt: number; // the describer's deadline (moves later if the AI fails)
   firstSubmitAt?: number; // for the speed bonus, so an AI failure doesn't change it
+  aiFailures: number; // how many times the AI failed this turn; after MAX_AI_FAILURES the turn moves on
   guessEndsAt: number;
   guessesOpen: boolean;
   guessTimer?: NodeJS.Timeout;
@@ -312,6 +315,7 @@ export class Room {
       guessEndsAt: now + config.guessMs,
       guessesOpen: true,
       guesses: new Map(),
+      aiFailures: 0,
       finished: false,
     };
     this.turn = turn;
@@ -411,6 +415,11 @@ export class Room {
     } catch (err) {
       if (err instanceof SubmitError || this.closed) throw err;
       console.error(`[${this.code}] AI pipeline failed:`, err);
+      // Failing again and again (e.g. out of quota) would loop forever: give up and move on.
+      if (++turn.aiFailures >= MAX_AI_FAILURES) {
+        this.endWithoutDrawing("https://placehold.co/512x512/png?text=AI+out+of+juice", "The AI ran out of juice. This one's on the house.");
+        throw new SubmitError(502, "The AI is having a moment. Moving on!");
+      }
       this.retryDescribing(turn);
       throw new SubmitError(502, "The AI had a problem. Try again!");
     }
@@ -444,17 +453,22 @@ export class Room {
 
   // The describer didn't submit in time. Guessers still get scored.
   private timeUp() {
+    this.endWithoutDrawing("https://placehold.co/512x512/png?text=*crickets*", "Total silence. The AI drew exactly what you said.");
+  }
+
+  // Ends the turn with no drawing (0 accuracy for the describer). Guessers still get scored.
+  private endWithoutDrawing(imageUrl: string, caption: string) {
     const turn = this.turn;
     if (!turn) return;
     turn.drawing = {
       result: {
         transcript: "",
-        imageUrl: "https://placehold.co/512x512/png?text=*crickets*",
+        imageUrl,
         targetImageUrl: turn.target.imageUrl,
         score: 0,
         gotRight: [],
         gotWrong: [],
-        caption: "Total silence. The AI drew exactly what you said.",
+        caption,
       },
       bannedHits: 0,
       described: false,

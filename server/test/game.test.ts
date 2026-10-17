@@ -79,7 +79,7 @@ describe("game server", () => {
     assert.equal((await submit(server.url, { roomCode: "ZZZZ", playerId: sam.id, text: "hi" })).status, 404);
     assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id })).status, 400);
     assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "hi", audio: new Blob(["x"]) })).status, 400);
-    assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "x".repeat(201) })).status, 400);
+    assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "x".repeat(501) })).status, 400);
     assert.equal((await submit(server.url, { roomCode: code, playerId: sam.id, text: "hi" })).status, 403, "lobby");
 
     host.socket.emit("start_game");
@@ -173,6 +173,33 @@ describe("game server", () => {
     await host.waitFor("round_result");
     closeAll();
     await flakyServer.close();
+  });
+
+  test("if the AI keeps failing (e.g. out of quota), the turn moves on instead of looping", async () => {
+    const fake = createFakeAi(0);
+    const broken: Ai = {
+      ...fake,
+      draw: async () => {
+        throw new Error("Quota exceeded");
+      },
+    };
+    const brokenServer = await startTestServer({ ai: broken });
+    const { host, code, players, closeAll } = await setUp(brokenServer.url, ["Sam", "Ana"]);
+    host.socket.emit("start_game");
+    await players[0]!.client.waitFor("your_turn");
+
+    const originalError = console.error;
+    console.error = () => {}; // the server logs each failure; keep test output clean
+    const first = await submit(brokenServer.url, { roomCode: code, playerId: players[0]!.id, text: "a dog" });
+    const second = await submit(brokenServer.url, { roomCode: code, playerId: players[0]!.id, text: "a dog" });
+    console.error = originalError;
+    assert.deepEqual([first.status, second.status], [502, 502]);
+
+    const { result } = await host.waitFor("round_result");
+    assert.equal(result.score, 0);
+    assert.match(result.caption, /out of juice/);
+    closeAll();
+    await brokenServer.close();
   });
 
   test("playing again resets scores", async () => {

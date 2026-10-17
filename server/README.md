@@ -54,6 +54,12 @@ With `GEMINI_API_KEY` set in `.env`, rounds go through Gemini ([`src/ai/gemini.t
 5. **Score the guesses** in one call per turn: the text model rates every guess 0–100 against the target's `prompt`. If that fails, the server scores them by shared words instead ([`src/ai/wordMatch.ts`](src/ai/wordMatch.ts)), so the turn still ends.
 
 Each call has a 30s timeout and one retry (not for errors like a bad key or no credits). If it still fails, `/submit` returns 502 and the describer gets their turn back.
+If it fails twice in one turn (say the free quota ran out), the turn ends with 0 points instead of looping. If only the judging step fails, the drawing is scored by the words it shares with the target.
+
+**Free quota.** Free keys allow only a few requests a day per model. To stretch it:
+- Phones turn speech into text themselves when the browser can (iPhone Safari, Android Chrome), so most turns skip the transcription call. Other browsers send audio.
+- `GEMINI_API_KEY` takes several keys, comma-separated, each from its own Google Cloud project. When one runs out, the next takes over.
+- Pick a text model with a bigger free allowance in `GEMINI_TEXT_MODEL` (see https://ai.dev/rate-limit).
 Drawn images are shrunk to 768px JPEGs (about 100 KB instead of a 1 MB PNG), kept in memory, and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_IMAGE_MODEL`.
 
 The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=pollinations` to draw with [Pollinations](https://pollinations.ai) instead ([`src/ai/pollinations.ts`](src/ai/pollinations.ts)): free, no key, slower (10–30s a drawing). Without a token it rate-limits requests close together; a free token from [auth.pollinations.ai](https://auth.pollinations.ai) in `POLLINATIONS_TOKEN` raises the limit. Gemini still does everything else.

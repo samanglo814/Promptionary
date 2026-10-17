@@ -158,3 +158,25 @@ export const mockHallOfShame: HallOfShame = {
     { word: "sadder", avgScore: 23 },
   ],
 };
+// The describer's points for mockResult (round 2, so the x1.5 line shows).
+export const mockBreakdown: PrompterBreakdown = {
+  accuracy: 294,
+  clarity: 120,
+  speed: 25,
+  bannedPenalty: 100,
+  multiplier: 1.5,
+  total: 509,
+};
+
+// Everyone else's guesses for mockResult, best first.
+export const mockGuesses: GuessResult[] = [
+  { playerId: "2", playerName: "Jordan", text: "a dog riding a skateboard", accuracy: 90, speed: 96, points: 190 },
+  { playerId: "3", playerName: "Priya", text: "fluffy pet on wheels", accuracy: 60, speed: 82, points: 108 },
+  { playerId: "4", playerName: "Abigail", text: "a cat doing tricks", accuracy: 20, speed: 74, points: 33 },
+];
+
+export const mockAwards: Award[] = [
+  { title: "Closest drawing", playerName: "Gabriel", imageUrl: "" },
+  { title: "Sharpest guesser", playerName: "Charisse", imageUrl: "" },
+  { title: "Most wrong masterpiece", playerName: "Chadrick", imageUrl: "" },
+];

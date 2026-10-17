@@ -10,6 +10,7 @@ import { readLocalTargetImage } from "../targets.js";
 import type { Target } from "../types.js";
 import type { ImageStore } from "./images.js";
 import { toJpeg } from "./jpeg.js";
+import { wordMatchScore } from "./wordMatch.js";
 import type { Ai, Drawing, GuessTarget } from "./index.js";
 
 // The real AI pipeline (README, "AI pipeline"): transcribe → draw → score + caption.
@@ -56,9 +57,44 @@ export type GeminiOptions = {
   loadImage?: (url: string) => Promise<{ data: Buffer; mimeType: string }>;
 };
 
-export function geminiClient(apiKey: string): Generate {
-  const client = new GoogleGenAI({ apiKey });
+// GEMINI_API_KEY can hold several keys, comma-separated (each from its own Google Cloud project,
+// so each has its own free quota). When a key runs out (429), the next one takes over.
+export function geminiClient(apiKeys: string): Generate {
+  const clients = apiKeys
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean)
+    .map((apiKey): Generate => {
+      const client = new GoogleGenAI({ apiKey });
+      return (params) => client.models.generateContent(params);
+    });
+  return withKeyRotation(clients);
+}
+
+// Gemini through Google Cloud's Vertex AI instead of an AI Studio key: billed to the project's
+// Cloud billing account (where free-trial credits apply), with no free-tier daily cap.
+// Signs in with Application Default Credentials: run `gcloud auth application-default login` once.
+export function vertexClient(project: string, location: string): Generate {
+  const client = new GoogleGenAI({ vertexai: true, project, location });
   return (params) => client.models.generateContent(params);
+}
+
+// Calls the current key; on "out of quota" (429) moves to the next key and tries again,
+// until every key has been tried once. Later calls start from the key that last worked.
+export function withKeyRotation(clients: Generate[]): Generate {
+  let current = 0;
+  return async (params) => {
+    for (let tried = 1; ; tried++) {
+      try {
+        return await clients[current]!(params);
+      } catch (err) {
+        const outOfQuota = (err as { status?: unknown }).status === 429;
+        if (!outOfQuota || tried >= clients.length) throw err;
+        current = (current + 1) % clients.length;
+        console.warn(`Gemini key out of quota, switching to key ${current + 1} of ${clients.length}`);
+      }
+    }
+  };
 }
 
 export function createGeminiAi(options: GeminiOptions): Ai {
@@ -120,8 +156,14 @@ export function createGeminiAi(options: GeminiOptions): Ai {
       if (!drawn) return refusal(transcript);
 
       const imageUrl = images.add(drawn.data, drawn.mimeType);
-      const judged = await judge(generate, textModel, transcript, await targetImage, drawn, target);
-      return { imageUrl, ...judged };
+      try {
+        const judged = await judge(generate, textModel, transcript, await targetImage, drawn, target);
+        return { imageUrl, ...judged };
+      } catch (err) {
+        // Out of quota, or Gemini is down: the drawing still counts, scored by shared words.
+        console.error("Judging the drawing failed, scoring by shared words:", err);
+        return { imageUrl, ...judgeByWords(transcript, target) };
+      }
     },
 
     async scoreGuesses(target, guesses) {
@@ -141,6 +183,24 @@ export function createGeminiAi(options: GeminiOptions): Ai {
       });
       return parseGuessScores(res.text ?? "", guesses.length);
     },
+  };
+}
+
+// When Gemini can't judge: score the description by the words it shares with the target
+// (its id, e.g. "dog-skateboard", and its banned words, which are what the picture shows).
+const fallbackCaptions = [
+  "The AI's judge is on a break, so we counted words instead.",
+  "Scored by a very tired robot. Squint and it's fair.",
+  "The judge AI clocked out. Word count it is.",
+];
+
+export function judgeByWords(transcript: string, target: Target): Omit<Drawing, "imageUrl"> {
+  const words = `${target.id.replace(/-/g, " ")} ${target.bannedWords.join(" ")}`;
+  return {
+    score: wordMatchScore(words, transcript),
+    gotRight: [],
+    gotWrong: [],
+    caption: fallbackCaptions[transcript.length % fallbackCaptions.length]!,
   };
 }
 

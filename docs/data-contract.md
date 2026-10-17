@@ -259,7 +259,7 @@ Called by the describer's phone during `describing`. The server transcribes (if 
 | `roomCode` | text | e.g. `FROG` |
 | `playerId` | text | from `joined.player.id` |
 | `audio` | file | **voice**: `description.webm` (Chrome/Android) or `description.m4a` (iPhone Safari). Up to 20s. |
-| `text` | text | **typed fallback**: up to 200 characters. If present, skip transcription and use it as the transcript. |
+| `text` | text | **typed, or transcribed on the phone** (browser speech recognition): up to 500 characters. If present, skip transcription and use it as the transcript. |
 
 Exactly one of `audio` or `text` is sent.
 
