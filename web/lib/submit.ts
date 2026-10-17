@@ -19,6 +19,18 @@ async function fakeSubmit(transcript?: string): Promise<SubmitResult> {
   return transcript ? { ...mockResult, transcript } : mockResult;
 }
 
+// /submit said no. `status` is the HTTP status: 503 = the AI is out of free requests (type instead),
+// 502 = the AI had a problem (send again), 403 = not your turn or time's up.
+// `message` is the server's own explanation, ready to show the player.
+export class SubmitError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 // The part both kinds of description share: add the room + player, send, read the reply.
 async function send(form: FormData, roomCode: string, playerId: string): Promise<SubmitResult> {
   // Tell the server which room and player this description belongs to.
@@ -26,8 +38,14 @@ async function send(form: FormData, roomCode: string, playerId: string): Promise
   form.append("playerId", playerId);
 
   // Send it. Don't set Content-Type yourself; the browser adds the right one for FormData.
+  // The server answers once the turn is revealed (it waits for the guesses), so this can take a while.
   const res = await fetch(`${SERVER_URL}/submit`, { method: "POST", body: form });
-  if (!res.ok) throw new Error(`/submit failed: ${res.status}`);
+  if (!res.ok) {
+    // Errors come back as { error: "..." }; fall back to a generic line if they don't.
+    const body = await res.json().catch(() => null);
+    const message = typeof body?.error === "string" ? body.error : "Couldn't send that. Try again!";
+    throw new SubmitError(res.status, message);
+  }
 
   // The server replies with JSON shaped like SubmitResult (see lib/mocks.ts).
   return res.json();
@@ -42,11 +60,9 @@ export async function submitAudio(
   if (!SERVER_URL) return fakeSubmit();
 
   // FormData is how browsers send files over HTTP (same as a file upload form).
+  // The recording is always WAV (see lib/mic.ts).
   const form = new FormData();
-  // Name the file by its format so the server knows what it's getting:
-  // iPhone gives mp4 audio (.m4a), Chrome/Android gives .webm.
-  const ext = audio.type.includes("mp4") ? "m4a" : "webm";
-  form.append("audio", audio, `description.${ext}`);
+  form.append("audio", audio, "description.wav");
   return send(form, roomCode, playerId);
 }
 

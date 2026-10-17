@@ -14,6 +14,7 @@ export const fastConfig: Partial<GameConfig> = {
   submitGraceMs: 200,
   retryMs: 1_000,
   reconnectGraceMs: 300,
+  hostGraceMs: 5_000,
   revealMs: 50,
   scoreboardMs: 50,
   gameOverMs: 50,
@@ -39,8 +40,9 @@ export class Client {
   constructor(
     readonly url: string,
     readonly label: string,
+    options: { reconnection?: boolean } = {},
   ) {
-    this.socket = io(url, { forceNew: true, reconnection: false });
+    this.socket = io(url, { forceNew: true, reconnection: options.reconnection ?? false });
     this.socket.onAny((event: EventName, payload: unknown) => {
       this.log.push({ event, payload, at: Date.now() });
       for (const check of this.listeners) check();
@@ -94,11 +96,11 @@ export async function submit(
   form.append("roomCode", fields.roomCode);
   form.append("playerId", fields.playerId);
   if (fields.text !== undefined) form.append("text", fields.text);
-  if (fields.audio) form.append("audio", fields.audio, "description.webm");
+  if (fields.audio) form.append("audio", fields.audio, "description.wav");
   const res = await fetch(`${url}/submit`, { method: "POST", body: form });
   return { status: res.status, body: await res.json() };
 }
 
 export function fakeAudio(): Blob {
-  return new Blob([new Uint8Array(2048)], { type: "audio/webm" });
+  return new Blob([new Uint8Array(2048)], { type: "audio/wav" });
 }

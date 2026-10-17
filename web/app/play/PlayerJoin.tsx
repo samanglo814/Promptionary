@@ -7,6 +7,7 @@
 // useEffect            = run code after the screen draws
 // useSyncExternalStore = read something from outside React (here: the URL) safely
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { warmUpMic } from "@/lib/mic";
 import { mockTarget, type Player, type SubmitResult, type Target } from "@/lib/mocks";
 import { SERVER_URL, connect, guessErrorText, joinErrorText, type GameSocket } from "@/lib/socket";
 import DescribeScreen from "./DescribeScreen";
@@ -98,7 +99,10 @@ export default function PlayerJoin() {
 
     // On first connect, and again after any reconnect (new socket), rejoin if we were in a room.
     // A saved session for a different room (e.g. scanned a new QR code) is ignored.
+    // A short drop (e.g. a locked screen) comes back "recovered": same connection, missed events
+    // replayed, nothing to do.
     s.on("connect", () => {
+      if (s.recovered) return;
       const saved = loadSession();
       const linkCode = codeFromUrl();
       if (saved && (!linkCode || linkCode === saved.code)) {
@@ -201,6 +205,8 @@ export default function PlayerJoin() {
   function join(e: React.FormEvent) {
     e.preventDefault(); // stop the browser from reloading the page on form submit
     if (!canJoin) return;
+    // Ask for the mic now, during the tap, so the popup doesn't eat into anyone's turn.
+    warmUpMic();
 
     if (socket) {
       // The server answers with "joined" or "join_error" (handled above).
@@ -227,7 +233,8 @@ export default function PlayerJoin() {
         endsAt={endsAt}
         onSubmitted={(r) => {
           setResult(r);
-          setPhase("sent");
+          // /submit answers with the reveal; round_result may already have sent us back to waiting.
+          setPhase((p) => (p === "describing" ? "sent" : p));
         }}
       />
     );

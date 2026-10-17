@@ -32,32 +32,44 @@ export function createFakeAi(delayMs: number): Ai {
         : "a fluffy thing... on wheels? kind of like a small horse";
     },
 
-    async draw(transcript, target) {
+    async draw(transcript) {
       await wait();
       if (/\bgoose\b/i.test(transcript)) {
         return {
-          imageUrl: "",
-          score: 0,
-          gotRight: [],
-          gotWrong: [],
-          caption: "Too spicy for the robot. Zero points, infinite respect.",
-          refused: true,
+          kind: "final",
+          drawing: {
+            imageUrl: "",
+            score: 0,
+            gotRight: [],
+            gotWrong: [],
+            caption: "Too spicy for the robot. Zero points, infinite respect.",
+            refused: true,
+          },
         };
       }
-      const h = hash(transcript + target.id);
       const label = encodeURIComponent(`AI drew: ${transcript.slice(0, 40)}`);
+      // The fake "image" is the transcript, so judge() can score it.
       return {
+        kind: "drawn",
         imageUrl: `https://placehold.co/512x512/png?text=${label}`,
-        score: h % 101,
-        gotRight: ["the general vibe"],
-        gotWrong: ["literally everything else"],
-        caption: captions[h % captions.length]!,
+        image: { data: Buffer.from(transcript), mimeType: "text/plain" },
       };
     },
 
-    async scoreGuesses(target, guesses) {
+    async judge({ target, image, guesses }) {
       await wait();
-      return guesses.map((guess) => wordMatchScore(target.prompt, guess));
+      const guessScores = guesses.map((guess) => wordMatchScore(target.prompt, guess));
+      if (!image) return { guessScores };
+      const h = hash(image.data.toString() + target.id);
+      return {
+        judgement: {
+          score: h % 101,
+          gotRight: ["the general vibe"],
+          gotWrong: ["literally everything else"],
+          caption: captions[h % captions.length]!,
+        },
+        guessScores,
+      };
     },
   };
 }

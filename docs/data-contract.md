@@ -147,7 +147,7 @@ lobby ─► round_start ─► intro ─► describing ─► processing ─►
 | `round_start` | 4s | timer or host sends `next` |
 | `intro` | 3s | timer |
 | `describing` | 20s | `/submit` arrives, or timer runs out (then 0 points, caption about the silence) |
-| `processing` | as long as Gemini takes, and until guessing closes | drawing and guess scores are both ready |
+| `processing` | as long as Gemini takes, and until guessing closes | the drawing is ready and guessing has closed, then one AI call judges both |
 | `reveal` | ~8s | timer (the reveal animation takes ~5s) or host sends `next` |
 | `scoreboard` | ~6s | timer or host sends `next` |
 | `game_over` | ~10s | timer or host sends `next`, then `hall_of_shame` (stays until the host starts again) |
@@ -181,11 +181,12 @@ All of these live in [`server/src/config.ts`](../server/src/config.ts).
 - `/submit` is accepted until `endsAt` plus a 3s grace, so an upload that started before the buzzer still counts.
 - A **timed-out** turn still sends `round_result`: `transcript: ""`, `score: 0`, a placeholder `imageUrl` ("*crickets*"), a caption about the silence, and the guesses (which still score).
 - `SubmitResult.score` is always the raw 0–100 match score; points are in `breakdown`.
-- If the AI fails and the describer gets their turn back, guesses already locked in stay, and guessing stays open at least as long as the new describing deadline.
+- If **transcribing** fails, the describer gets their turn back (with 10s more the first time only), guesses already locked in stay, and guessing stays open at least as long as the describing deadline. If **drawing or judging** fails, the turn still ends: the description and guesses are scored by shared words, with a placeholder image and a caption saying the AI ran out of ink.
 - A guesser who **refreshes** and rejoins mid-turn gets `describing` again (to reopen the guess box) and `guess_locked` if they already guessed.
 - If a **describer disconnects** before submitting, they have 5s to rejoin (see `join`) before their turn is skipped.
-- If the **host disconnects**, the room ends and everyone gets `error`.
-- The host can send `start_game` again from `game_over` or `hall_of_shame` to **play again** (scores reset, Hall of Shame keeps the whole night).
+- **Dropped connections** (a locked phone, a Wi-Fi or tunnel blip) use Socket.io connection state recovery: a socket that reconnects within 2 minutes comes back with the same id (`socket.recovered` is true) and gets the events it missed, so it doesn't rejoin.
+- If the **host** closes the page, the room ends and everyone gets `error`. If the host's connection only drops, the room waits 2 minutes for it to come back first.
+- The host can send `start_game` again from `game_over` or `hall_of_shame` to **play again** (scores reset, Hall of Shame keeps the whole night). Players whose phones dropped less than 2 minutes ago stay in, and can rejoin with their `playerId`.
 
 ---
 
@@ -198,7 +199,7 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 | Event | Payload | When |
 |---|---|---|
 | `create_room` | *(none)* | Host page opens |
-| `start_game` | *(none)* | Host clicks Start (needs 2+ players) |
+| `start_game` | ack callback: `{ error: string \| null }` | Host clicks Start (needs 2+ players). The server answers through the callback (`null` = started), so the host page can tell a refusal from a click that never arrived. A refusal is also sent as `error`. |
 | `next` | *(none)* | Optional: host skips ahead from `round_start`, `reveal`, `scoreboard`, or `game_over` |
 
 ### Player → server
@@ -250,7 +251,7 @@ Notes:
 
 ## 4. POST /submit
 
-Called by the describer's phone during `describing`. The server transcribes (if audio), checks banned words, generates the image, scores it, writes the caption, and returns the `SubmitResult` to the phone. Once guessing has closed too, it logs the turn and broadcasts `round_result` with the same `result` plus the points. So the phone's response can arrive **before** `round_result`.
+Called by the describer's phone during `describing`. The server transcribes (if audio), checks banned words, and generates the image. Once guessing has closed too, one AI call scores the image, writes the caption, and scores the guesses; the server broadcasts `round_result` and answers the phone with the same `result`. So the response arrives **with** the reveal, which can take until the guessing window closes.
 
 **Request:** `multipart/form-data` (built with `FormData` in [`web/lib/submit.ts`](../web/lib/submit.ts)).
 
@@ -258,7 +259,7 @@ Called by the describer's phone during `describing`. The server transcribes (if 
 |---|---|---|
 | `roomCode` | text | e.g. `FROG` |
 | `playerId` | text | from `joined.player.id` |
-| `audio` | file | **voice**: `description.webm` (Chrome/Android) or `description.m4a` (iPhone Safari). Up to 20s. |
+| `audio` | file | **voice**: `description.wav`, 16 kHz mono 16-bit PCM, from every browser ([`web/lib/mic.ts`](../web/lib/mic.ts)). Up to 20s (about 640 KB). |
 | `text` | text | **typed fallback**: up to 200 characters. If present, skip transcription and use it as the transcript. |
 
 Exactly one of `audio` or `text` is sent.
@@ -269,12 +270,13 @@ Exactly one of `audio` or `text` is sent.
 
 | Status | When | Phone does |
 |---|---|---|
-| `400` | missing fields, both/neither of `audio` and `text` | "Couldn't send that. Try again!" |
-| `403` | not this player's turn, already submitted, or describing time is over | same message |
-| `404` | room not found | same message |
-| `500` / `502` | Gemini failed after retries | same message, player can retry (the server gives back the turn with at least 10s left and re-sends `your_turn`) |
+| `400` | missing fields, both/neither of `audio` and `text` | shows the server's `error` |
+| `403` | not this player's turn, already submitted, or describing time is over | shows the server's `error` |
+| `404` | room not found, or the turn was skipped | shows the server's `error` |
+| `502` | transcribing failed after a retry | shows the `error`, with **Send again** (same recording) and **Record again**. The server re-sends `your_turn`, with 10s more the first time only. |
+| `503` | the AI is out of free requests | shows the `error` and switches to typing, which still works (scored by shared words) |
 
-Error responses have the body `{ error: string }`.
+Error responses have the body `{ error: string }`, a message ready to show the player.
 
 A blocked image is **not** an error: return `200` with `refused: true`, `imageUrl: ""`, `score: 0`, empty `gotRight`/`gotWrong`, and a caption.
 
@@ -312,7 +314,7 @@ Suggest adding both columns. `worstWords` can be computed from `transcript` + `s
 
 ## 6. Environment variables
 
-**`server/.env`**: `PORT`, `CLIENT_ORIGIN`, `PUBLIC_URL` (the server's address as browsers see it, for AI image URLs; defaults to `http://localhost:PORT`), `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_IMAGE_MODEL`, `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `DEMO_MODE`
+**`server/.env`**: `PORT`, `CLIENT_ORIGIN`, `PUBLIC_URL` (the server's address as browsers see it, for AI image URLs; defaults to `http://localhost:PORT`), `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_TRANSCRIBE_MODEL`, `GEMINI_IMAGE_MODEL`, `IMAGE_PROVIDER`, `POLLINATIONS_TOKEN`, `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `DEMO_MODE`
 
 **`web/.env`**: `NEXT_PUBLIC_SERVER_URL` (when unset, the web app uses mocks), `NEXT_PUBLIC_AUTH0_DOMAIN`, `NEXT_PUBLIC_AUTH0_CLIENT_ID`, `NEXT_PUBLIC_AUTH0_AUDIENCE`
 

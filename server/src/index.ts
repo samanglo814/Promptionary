@@ -15,14 +15,17 @@ const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`;
 // Real Gemini when there's a key, otherwise the fake AI.
 const apiKey = process.env.GEMINI_API_KEY;
 const images = new ImageStore(publicUrl);
+const pollinations = (prompt: string) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN });
+const usePollinations = process.env.IMAGE_PROVIDER === "pollinations";
 const ai = apiKey
   ? createGeminiAi({
       generate: geminiClient(apiKey),
       textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
+      transcribeModel: process.env.GEMINI_TRANSCRIBE_MODEL || "gemini-flash-lite-latest",
       imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
-      drawImage: process.env.IMAGE_PROVIDER === "pollinations"
-        ? (prompt) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN })
-        : undefined,
+      drawImage: usePollinations ? pollinations : undefined,
+      // The Gemini image model needs billing; without it, Pollinations draws instead.
+      fallbackDrawImage: usePollinations ? undefined : pollinations,
       images,
     })
   : undefined;

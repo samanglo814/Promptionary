@@ -15,7 +15,9 @@ Then point the web app at it: set `NEXT_PUBLIC_SERVER_URL=http://localhost:4000`
 
 Testing with phones? Set `PUBLIC_URL` in `server/.env` to the same address as `NEXT_PUBLIC_SERVER_URL` (e.g. `http://192.168.1.20:4000`), or the describer's phone can't load the target image.
 
-Phone browsers only allow the mic on `https://` pages, so for voice on phones run `./dev-tunnel.sh` from the repo root instead (needs `brew install cloudflared`). It starts both apps behind free Cloudflare tunnels and prints an `https://` host address; phones can join from any network. Your `.env` files aren't changed.
+Phone browsers only allow the mic on `https://` pages, so for voice on phones run `./dev-tunnel.sh` from the repo root instead (needs `brew install cloudflared`). It starts both apps behind free Cloudflare tunnels and prints an `https://` host address; phones can join from any network. Your `.env` files aren't changed. It runs the server with `npm start`, not `npm run dev`: the dev server restarts whenever a file is saved, which ends every game in progress.
+
+**Mic permission on iPhones.** The phone asks for the mic once, when the player taps Join, and keeps it open for the whole visit (the mic indicator stays on), so it doesn't ask again every turn. Each `./dev-tunnel.sh` run gets a new random `trycloudflare.com` address, though, and Safari remembers the permission per address, so players get asked once per run. To stop the asking entirely: Settings → Apps → Safari → Microphone → Allow, or host the game at a fixed address.
 
 ## Check it
 
@@ -41,24 +43,27 @@ npm run generate:images -- frog-wedding    # redraw specific ones
 npm run generate:images -- --all           # redraw everything
 ```
 
-To add a target, add an entry to `targets.json` (`id` in kebab-case, since Gemini reads it as a hint when scoring), run the script, and look at the image before committing. If the image has words in it that give the answer away, add something like "no labels" to the prompt and redraw. A target without an image shows a placeholder.
+To add a target, add an entry to `targets.json` (`id` in kebab-case), run the script, and look at the image before committing. If the image has words in it that give the answer away, add something like "no labels" to the prompt and redraw. A target without an image shows a placeholder.
 
 ## The AI
 
 With `GEMINI_API_KEY` set in `.env`, rounds go through Gemini ([`src/ai/gemini.ts`](src/ai/gemini.ts)):
 
-1. **Transcribe** the recording (typed text skips this).
+1. **Transcribe** the recording (typed text skips this) with `GEMINI_TRANSCRIBE_MODEL`. Phones record WAV (16 kHz mono, [`web/lib/mic.ts`](../web/lib/mic.ts)), a format Gemini accepts from every browser.
 2. The room checks **banned words**.
 3. **Draw** the transcript nearly verbatim with the image model. A blocked image becomes a refusal (`refused: true`), not an error.
-4. **Score and caption** in one call: the text model compares the target and the drawing and returns JSON.
-5. **Score the guesses** in one call per turn: the text model rates every guess 0–100 against the target's `prompt`. If that fails, the server scores them by shared words instead ([`src/ai/wordMatch.ts`](src/ai/wordMatch.ts)), so the turn still ends.
+4. **Judge** in one call per turn, once guessing has closed: the text model compares the target and the drawing (score and caption) and rates every guess 0–100 against the target's `prompt`. A turn with nothing drawn (silence, a refusal) only needs the guesses scored, and a turn with no guesses and nothing drawn needs no call.
 
-Each call has a 30s timeout and one retry (not for errors like a bad key or no credits). If it still fails, `/submit` returns 502 and the describer gets their turn back.
-Drawn images are shrunk to 768px JPEGs (about 100 KB instead of a 1 MB PNG), kept in memory, and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_IMAGE_MODEL`.
+**Free tier.** Google's free tier allows about 20 requests a day per model, so a voice turn costs one transcription (on the lighter `gemini-flash-lite-latest` by default, which has its own allowance) and one judging call (`GEMINI_TEXT_MODEL`). If the transcription model is missing or out of quota, the text model transcribes instead.
 
-The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=pollinations` to draw with [Pollinations](https://pollinations.ai) instead ([`src/ai/pollinations.ts`](src/ai/pollinations.ts)): free, no key, slower (10–30s a drawing). Without a token it rate-limits requests close together; a free token from [auth.pollinations.ai](https://auth.pollinations.ai) in `POLLINATIONS_TOKEN` raises the limit. Gemini still does everything else.
+**When the AI fails.** Each call has a 30s timeout and one retry, except errors that won't go away: a bad key, no credits, or out of quota (`429`). After a `429` the server stops calling that model until Google says it's back (no wasted requests) and the game falls back:
+- **Transcribing fails:** `/submit` returns `502` (`503` when out of quota, and the phone switches to typing). The describer gets 10 more seconds the first time only, so a broken AI can't keep one turn going forever.
+- **Drawing or judging fails:** the turn still ends. The description and the guesses are scored by shared words with the target's `prompt` ([`src/ai/wordMatch.ts`](src/ai/wordMatch.ts)), with an "ran out of ink" placeholder and caption.
+Drawn images are shrunk to 768px JPEGs (about 100 KB instead of a 1 MB PNG), kept in memory, and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` / `GEMINI_IMAGE_MODEL`.
 
-`npm run live:gemini` plays a few rounds against the real API and saves the drawings to `live-output/`.
+The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=pollinations` to draw with [Pollinations](https://pollinations.ai) instead ([`src/ai/pollinations.ts`](src/ai/pollinations.ts)): free, no key, slower (10–30s a drawing). Without a token it rate-limits requests close together; a free token from [auth.pollinations.ai](https://auth.pollinations.ai) in `POLLINATIONS_TOKEN` raises the limit. Gemini still does everything else. If you leave it unset and the Gemini image model fails, Pollinations draws instead.
+
+`npm run live:gemini` plays a few rounds against the real API and saves the drawings to `live-output/`. It spends about 6 requests of the daily allowance.
 
 Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Typed text is used as the transcript, audio gets a canned one, the score is a hash of the words, guesses score by the words they share with the target's `prompt`, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
 

@@ -15,6 +15,10 @@ export type GameConfig = {
   retryMs: number;
   // A describer who disconnects (e.g. their phone refreshed) has this long to rejoin before their turn is skipped.
   reconnectGraceMs: number;
+  // Playing again keeps players who disconnected less than this long ago (a locked phone), so they can rejoin.
+  dropPlayerAfterMs: number;
+  // A host page whose connection drops (not closed on purpose) has this long to reconnect before the room closes.
+  hostGraceMs: number;
   revealMs: number;
   scoreboardMs: number;
   gameOverMs: number; // podium, then the Hall of Shame
@@ -66,6 +70,8 @@ export const defaultConfig: GameConfig = {
   submitGraceMs: 3_000,
   retryMs: 10_000,
   reconnectGraceMs: 5_000,
+  dropPlayerAfterMs: 2 * 60_000,
+  hostGraceMs: 2 * 60_000,
   revealMs: 8_000,
   scoreboardMs: 6_000,
   gameOverMs: 10_000,

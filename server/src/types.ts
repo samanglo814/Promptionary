@@ -132,7 +132,8 @@ export type ServerToClientEvents = {
 
 export type ClientToServerEvents = {
   create_room: () => void;
-  start_game: () => void;
+  // ack answers with why it didn't start (null = started). Older pages may not send one.
+  start_game: (ack?: (p: { error: string | null }) => void) => void;
   next: () => void;
   // playerId is optional: send the id from an earlier `joined` to rejoin after a refresh.
   join: (p: { code: string; name: string; playerId?: string }) => void;

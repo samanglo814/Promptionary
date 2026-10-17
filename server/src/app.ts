@@ -54,7 +54,12 @@ export function createGameServer(options: ServerOptions): GameServer {
   });
 
   const httpServer = createServer(app);
-  const io: GameIo = new Server(httpServer, { cors: corsOptions });
+  const io: GameIo = new Server(httpServer, {
+    cors: corsOptions,
+    // A phone that locks its screen, or a tunnel that blips, reconnects as the same socket and gets the
+    // events it missed, instead of dropping out of the game.
+    connectionStateRecovery: { maxDisconnectionDuration: config.hostGraceMs },
+  });
   const rooms = new RoomStore({
     io,
     config,
