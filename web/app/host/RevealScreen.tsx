@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { type SubmitResult } from "@/lib/mocks";
+import RefusalCard from "./RefusalCard";
 
 // What the host page passes in.
 type Props = {
@@ -100,17 +101,26 @@ export default function RevealScreen({ playerName, result }: Props) {
 
         {/* Right: what the AI drew. Wipes in from left to right after a pause.
             The animation shorthand is: name, duration, easing, delay, fill-mode.
-            "both" = stay hidden during the delay and stay visible after it ends. */}
+            "both" = stay hidden during the delay and stay visible after it ends.
+            If the AI refused to draw it, a refusal card wipes in instead. */}
         <figure className="flex flex-col items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={result.imageUrl}
-            alt="What the AI drew"
-            className="size-72 lg:size-80 object-cover rounded-card shadow-lg bg-white"
-            style={{
-              animation: `wipe ${WIPE_DURATION}ms ease-in-out ${WIPE_DELAY}ms both`,
-            }}
-          />
+          {result.refused ? (
+            <RefusalCard
+              transcript={result.transcript}
+              className="size-72 lg:size-80"
+              style={{ animation: `wipe ${WIPE_DURATION}ms ease-in-out ${WIPE_DELAY}ms both` }}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={result.imageUrl}
+              alt="What the AI drew"
+              className="size-72 lg:size-80 object-cover rounded-card shadow-lg bg-white"
+              style={{
+                animation: `wipe ${WIPE_DURATION}ms ease-in-out ${WIPE_DELAY}ms both`,
+              }}
+            />
+          )}
           {/* The animation goes on the outer tag and opacity-60 on the inner one,
               because the animation's ending opacity (1) would override opacity-60. */}
           <figcaption style={{ animation: `rise 0.5s ease-out ${WIPE_DELAY}ms both` }}>
