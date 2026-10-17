@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "node --import tsx --test test/*.test.ts",
     "bots": "tsx scripts/bots.ts",
+    "live:gemini": "tsx scripts/live-gemini.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run bots"
   },
   "dependencies": {
