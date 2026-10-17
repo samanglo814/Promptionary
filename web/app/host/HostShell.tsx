@@ -12,6 +12,7 @@ type Props = {
   footer: string; // right side of the footer, e.g. "4 PLAYERS / 2 ROUNDS"
   children: ReactNode;
   buzz?: number; // changes every banned-word buzz, which flashes the screen edge
+  hostName?: string; // who signed in with Auth0 to host (unset when sign-in is off)
 };
 
 function SpeakerIcon({ muted }: { muted: boolean }) {
@@ -27,7 +28,7 @@ function SpeakerIcon({ muted }: { muted: boolean }) {
   );
 }
 
-export default function HostShell({ context, code, muted, onToggleMute, footer, children, buzz }: Props) {
+export default function HostShell({ context, code, muted, onToggleMute, footer, children, buzz, hostName }: Props) {
   return (
     <div className="relative flex min-h-screen flex-col gap-6 px-12 pb-6 pt-[30px]">
       {/* Banned-word flash. Re-keyed on every buzz so the animation replays. */}
@@ -37,6 +38,15 @@ export default function HostShell({ context, code, muted, onToggleMute, footer, 
         <Brand size="lg" />
         <p className="text-[15px] font-bold uppercase text-muted">{context}</p>
         <div className="flex items-center gap-3">
+          {hostName && (
+            <span className="mr-3 text-xs font-bold text-muted">
+              Hosted by <span className="text-text">{hostName}</span> ·{" "}
+              {/* A plain <a>: signing out is a full page load through Auth0, not an in-app link. */}
+              <a href="/auth/logout" className="underline underline-offset-4 hover:text-text">
+                Sign out
+              </a>
+            </span>
+          )}
           {code && (
             <>
               <span className="text-xs font-extrabold text-muted">ROOM</span>

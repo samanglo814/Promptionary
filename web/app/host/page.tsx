@@ -103,6 +103,19 @@ export default function HostPage() {
   const [starting, setStarting] = useState(false);
   // Sound on/off. The state drives the button's icon; setMuted tells the sound module.
   const [muted, setMutedState] = useState(false);
+  // Who's hosting, when they signed in with Auth0 (see proxy.ts). Stays "" when sign-in is off.
+  const [hostName, setHostName] = useState("");
+
+  useEffect(() => {
+    // Auth0's /auth/profile answers with the signed-in user, or an error when there's no session
+    // or sign-in is off; either way the header just leaves the name out.
+    fetch("/auth/profile")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((user: { given_name?: string; name?: string; nickname?: string } | null) => {
+        if (user) setHostName(user.given_name || user.nickname || user.name || "");
+      })
+      .catch(() => {});
+  }, []);
 
   // Switch screens and restart the new screen's animation.
   function show(next: Phase) {
@@ -271,6 +284,7 @@ export default function HostPage() {
         setMutedState(!muted); // update the icon
       }}
       footer={footer}
+      hostName={hostName}
       buzz={phase === "describing" || phase === "processing" ? buzz : undefined}
     >
       {phase === "lobby" && (
