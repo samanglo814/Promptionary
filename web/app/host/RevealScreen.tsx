@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { type SubmitResult } from "@/lib/mocks";
 import RefusalCard from "./RefusalCard";
+import { playBuzzer, playDrumroll, playSting } from "@/lib/sounds";
 
 // What the host page passes in.
 type Props = {
@@ -67,6 +68,32 @@ function scoreColor(score: number) {
 // then the score, the roast caption, and what the AI got right and wrong.
 export default function RevealScreen({ playerName, result }: Props) {
   const shownScore = useCountUp(result.score, SCORE_DURATION, SCORE_DELAY);
+
+  // Sound, timed to the animation:
+  //   normal round → drumroll while the score counts, then a sting when it lands
+  //   refused      → a buzzer when the REFUSED stamp slams down (also at SCORE_DELAY, 2.1s)
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = []; // so cleanup can cancel them
+    let stopRoll = () => {}; // replaced with the real stop() once the drumroll starts
+
+    if (result.refused) {
+      timers.push(setTimeout(playBuzzer, SCORE_DELAY));
+    } else {
+      timers.push(
+        setTimeout(() => {
+          stopRoll = playDrumroll(SCORE_DURATION / 1000); // Web Audio wants seconds
+        }, SCORE_DELAY),
+      );
+      timers.push(setTimeout(() => playSting(result.score), SCORE_DELAY + SCORE_DURATION));
+    }
+
+    // Cleanup: if the screen changes mid-reveal (Replay, next round), cancel any
+    // sounds that haven't started yet and cut off a drumroll that's playing.
+    return () => {
+      timers.forEach(clearTimeout);
+      stopRoll();
+    };
+  }, [result]);
 
   // Right and wrong go in one list so they can pop in one after another.
   // `good` decides the color and the ✓ / ✗ symbol.

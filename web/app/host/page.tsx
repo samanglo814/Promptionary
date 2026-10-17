@@ -20,6 +20,7 @@ import {
 import RevealScreen from "./RevealScreen";
 import Scoreboard from "./Scoreboard";
 import HallOfShame from "./HallOfShame";
+import { playPop, setMuted } from "@/lib/sounds";
 
 // The link the QR code points to. window only exists in the browser,
 // so on the server useSyncExternalStore uses "" instead (and no QR is drawn yet).
@@ -48,6 +49,8 @@ export default function HostPage() {
   const [playCount, setPlayCount] = useState(0);
   // Which result the reveal shows. FAKE: the server will send this with "round_result".
   const [revealResult, setRevealResult] = useState<SubmitResult>(mockResult);
+  // Sound on/off. The state drives the button's icon; setMuted tells the sound module.
+  const [muted, setMutedState] = useState(false);
 
   // Switch screens and restart the new screen's animation.
   function show(next: Phase) {
@@ -63,15 +66,32 @@ export default function HostPage() {
       if (i >= mockPlayers.length) return clearInterval(timer);
       const next = mockPlayers[i++];
       setPlayers((prev) => [...prev, next]);
+      playPop(); // silent until someone has clicked the page once (browser rule)
     }, 1500);
 
     return () => clearInterval(timer); // cleanup if the page closes
   }, []);
 
+  // Mute toggle, pinned to the top-right corner of every host screen.
+  // Defined once here and dropped into both returns below.
+  const muteButton = (
+    <button
+      onClick={() => {
+        setMuted(!muted); // tell the sound module
+        setMutedState(!muted); // update the icon
+      }}
+      className="fixed top-4 right-4 text-2xl opacity-60 hover:opacity-100"
+      aria-label={muted ? "Unmute sounds" : "Mute sounds"}
+    >
+      {muted ? "🔇" : "🔊"}
+    </button>
+  );
+
   // ---------- Game screens (everything except the lobby) ----------
   if (phase !== "lobby") {
     return (
       <>
+        {muteButton}
         {/* FAKE: the server will send the real data with socket events */}
         {phase === "reveal" && (
           <RevealScreen key={playCount} playerName="Sam" result={revealResult} />
@@ -115,6 +135,7 @@ export default function HostPage() {
   // ---------- Lobby screen ----------
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-10 p-8">
+      {muteButton}
       <h1 className="text-6xl font-black tracking-tight">Reverse Charades</h1>
 
       <div className="flex flex-col md:flex-row items-center gap-12">
