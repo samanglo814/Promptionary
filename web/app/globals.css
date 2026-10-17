@@ -37,3 +37,17 @@ body {
   from { transform: translateY(1rem); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
 }
+
+/* Podium: blocks grow up out of the floor.
+   scaleY squashes an element vertically: 0 = flat, 1 = full height.
+   Pair it with origin-bottom so it grows upward instead of from the middle. */
+@keyframes grow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* Scoreboard: bars fill from left to right. Pair with origin-left. */
+@keyframes fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
