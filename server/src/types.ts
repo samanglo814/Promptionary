@@ -114,7 +114,10 @@ export type ServerToClientEvents = {
     multiplier: number;
     describer: Player;
   }) => void;
-  describing: (p: { describer: Player; endsAt: number; guessEndsAt: number }) => void;
+  // guessEndsAt is provisional (the describing deadline) until guessClockStarted: the guess clock
+  // starts when the describer says their first word, then guess_clock says when guessing closes.
+  describing: (p: { describer: Player; endsAt: number; guessEndsAt: number; guessClockStarted: boolean }) => void;
+  guess_clock: (p: { guessEndsAt: number }) => void;
   guesses_locked: (p: { playerIds: string[]; open: boolean }) => void;
   banned_buzz: (p: { playerId: string; word: string }) => void;
   processing: (p: { describer: Player }) => void;
@@ -139,6 +142,8 @@ export type ClientToServerEvents = {
   join: (p: { code: string; name: string; playerId?: string }) => void;
   // Everyone but the describer: one guess per turn.
   guess: (p: { text: string }) => void;
+  // The describer only: their phone heard the first word, so the guess clock starts.
+  speaking: () => void;
 };
 
 // What a player handed in: a recording (text is for the bot game and tests only).

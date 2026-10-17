@@ -36,7 +36,10 @@ type ServerEvents = {
     multiplier: number;
     describer: Player;
   }) => void;
-  describing: (p: { describer: Player; endsAt: number; guessEndsAt: number }) => void;
+  // guessEndsAt is a placeholder until guessClockStarted: the guess clock starts at the describer's
+  // first word, and guess_clock then says when guessing closes.
+  describing: (p: { describer: Player; endsAt: number; guessEndsAt: number; guessClockStarted: boolean }) => void;
+  guess_clock: (p: { guessEndsAt: number }) => void;
   guesses_locked: (p: { playerIds: string[]; open: boolean }) => void;
   banned_buzz: (p: { playerId: string; word: string }) => void;
   processing: (p: { describer: Player }) => void;
@@ -60,6 +63,8 @@ type ClientEvents = {
   next: () => void;
   join: (p: { code: string; name: string; playerId?: string }) => void;
   guess: (p: { text: string }) => void;
+  // The describer's phone heard their first word: starts the guess clock.
+  speaking: () => void;
 };
 
 export type GuessErrorReason = "not_now" | "describer" | "already_guessed" | "invalid_guess";

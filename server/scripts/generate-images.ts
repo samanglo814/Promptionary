@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { Modality } from "@google/genai";
 import { geminiClient } from "../src/ai/gemini.js";
 import { toJpeg } from "../src/ai/jpeg.js";
+import { styledPrompt } from "../src/ai/style.js";
 import { loadTargets, targetImageFile, targetImagesDir } from "../src/targets.js";
 
 // Draws the target images in data/targets.json with Gemini, into data/images/<id>.jpg.
@@ -25,10 +26,6 @@ const todo = args.includes("--all")
     ? targets.filter((t) => args.includes(t.id))
     : targets.filter((t) => !existsSync(targetImageFile(t.id)));
 
-const style =
-  "A bright, funny cartoon illustration with bold shapes and clear details, one scene filling the square frame, " +
-  "no text, letters or signs. The scene: ";
-
 mkdirSync(targetImagesDir, { recursive: true });
 console.log(todo.length ? `Drawing ${todo.length} target(s) with ${model}...` : "Every target has an image. Pass ids or --all to redraw.");
 
@@ -40,7 +37,7 @@ for (let i = 0; i < todo.length; i += 3) {
       try {
         const res = await generate({
           model,
-          contents: style + t.prompt,
+          contents: styledPrompt(t.prompt),
           config: { responseModalities: [Modality.IMAGE], imageConfig: { aspectRatio: "1:1" } },
         });
         const image = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;

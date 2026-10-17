@@ -9,6 +9,7 @@ import {
 import { readLocalTargetImage } from "../targets.js";
 import type { ImageStore } from "./images.js";
 import { toJpeg } from "./jpeg.js";
+import { styledPrompt } from "./style.js";
 import { AiOutOfQuotaError, type Ai, type Drawing, type JudgeTarget, type Judgement } from "./index.js";
 
 // The real AI pipeline (README, "AI pipeline"): transcribe → draw → judge the drawing and the guesses.
@@ -245,9 +246,10 @@ export function parseGuessScores(json: string, count: number, field = "scores"):
   });
 }
 
-// Draws the transcript nearly verbatim, so the describer's mistakes stay in the picture.
+// Draws the transcript nearly verbatim, so the describer's mistakes stay in the picture,
+// in the same cartoon style as the target cards (cardStyle) so the comparison is fair.
 const drawPrompt = (transcript: string) =>
-  `Draw this, exactly as described, as a single colorful illustration with no text: ${transcript}`;
+  styledPrompt(`draw exactly what the player described, nothing more, keeping their mistakes: ${transcript}`);
 
 // Returns undefined when Gemini refuses.
 async function drawImage(generate: Generate, model: string, prompt: string) {

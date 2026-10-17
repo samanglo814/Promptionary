@@ -171,6 +171,8 @@ export default function HostPage() {
       setGuessEndsAt(guessEndsAt);
       show("describing");
     });
+    // The describer started talking: guessing now closes at a set time.
+    s.on("guess_clock", ({ guessEndsAt }) => setGuessEndsAt(guessEndsAt));
     // Who has locked in a guess (never what they guessed). Updates the screen in place.
     s.on("guesses_locked", ({ playerIds, open }) => {
       setLockedIds(playerIds);

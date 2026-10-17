@@ -349,6 +349,35 @@ describe("guessing", () => {
     await server.close();
   });
 
+  test("the guess clock starts when the describer starts talking", async () => {
+    const server = await startTestServer({ config: { ...slowWindows, guessMs: 1_000 } });
+    const { host, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);
+    const [sam, ana, bo] = [players[0]!, players[1]!, players[2]!];
+    host.socket.emit("start_game");
+    await sam.client.waitFor("your_turn");
+    const describing = await ana.client.waitFor("describing");
+    assert.equal(describing.guessClockStarted, false, "no clock before the first word");
+
+    // The describer hesitates for longer than the whole guess window: guessing stays open, at full speed.
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    ana.client.socket.emit("guess", { text: "a dog" });
+    assert.equal((await ana.client.waitFor("guess_locked")).speed, 100);
+
+    ana.client.socket.emit("speaking"); // only the describer can start it
+    sam.client.socket.emit("speaking");
+    const spoke = Date.now();
+    const { guessEndsAt } = await host.waitFor("guess_clock");
+    assert.ok(Math.abs(guessEndsAt - (spoke + 1_000)) < 200, "guessing closes guessMs after the first word");
+    assert.equal(host.all("guess_clock").length, 1);
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    bo.client.socket.emit("guess", { text: "a cat" });
+    const late = await bo.client.waitFor("guess_locked");
+    assert.ok(late.speed < 95 && late.speed > 70, `speed counts from the first word (${late.speed})`);
+    closeAll();
+    await server.close();
+  });
+
   test("guessing closes early once everyone has guessed, or the last one waiting leaves", async () => {
     const server = await startTestServer({ config: slowWindows });
     const { host, code, players, closeAll } = await setUp(server.url, ["Sam", "Ana", "Bo"]);

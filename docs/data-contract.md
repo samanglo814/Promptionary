@@ -126,7 +126,7 @@ lobby ─► round_start ─► intro ─► describing ─► processing ─►
 
 **Rounds and turns:** a game is **2 rounds**. In each round, every player describes once (one **turn** each), so a game has 2 × players turns. Round 1 goes in join order. Round 2 goes **lowest score first**, so the leader describes last (ties keep join order). Every point earned in round 2 is worth **1.5×**.
 
-**Guessing:** while someone describes, everyone else can type **one** guess at what the secret image shows. Guessing opens when `describing` starts and closes `guessMs` (25s) later, or as soon as every connected player but the describer has guessed. It can stay open into `processing`. The reveal waits for both the AI's drawing and the guess scores.
+**Guessing:** while someone describes, everyone else can type **one** guess at what the secret image shows. Guessing opens when `describing` starts. The **guess clock** starts when the describer says their **first word** (their phone sends `speaking`; a `/submit` without it counts as the first word), so a describer who hesitates doesn't cost the guessers speed. Guessing closes `guessMs` (25s) after that, or as soon as every connected player but the describer has guessed. Guesses before the first word keep 100% speed. If the describer never says a word, guessing closes when the turn times out. It can stay open into `processing`. The reveal waits for both the AI's drawing and the guess scores.
 
 | Phase | Host screen (`/host`) | Describer's phone | Everyone else's phone |
 |---|---|---|---|
@@ -162,7 +162,7 @@ All of these live in [`server/src/config.ts`](../server/src/config.ts).
   - **Speed:** `100 × share of the 20s left` when they first sent it. Only counts when the match score is **40 or more**.
   - **Banned words:** −100 for each banned word said (each counts once).
   - `total = round(max(0, accuracy + clarity + speed − bannedPenalty) × multiplier)`. A timed-out turn earns 0.
-- **Guessers**, per guess: `round(max × accuracy/100 × speed/100)`. `speed` is 100 for an instant guess and drops evenly to 70 at the end of the 25s window. The AI scores `accuracy` 0–100 against the target's description (`prompt` in `targets.json`). If that call fails, shared words decide.
+- **Guessers**, per guess: `round(max × accuracy/100 × speed/100)`. `speed` is 100 for a guess before or right at the describer's first word and drops evenly to 70 at the end of the 25s window. The AI scores `accuracy` 0–100 against the target's description (`prompt` in `targets.json`). If that call fails, shared words decide.
 - **What one guess is worth (`max`)** depends on the number of players when the game started, so guessing stays about **40%** of a perfect game in any room size. `max = min(400, 666.7 / (players − 1)) × multiplier`, rounded to the nearest 5:
 
   | Players | Round 1 | Round 2 |
@@ -208,6 +208,7 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 |---|---|---|
 | `join` | `{ code: string, name: string, playerId?: string }` | Player taps Join. To **rejoin after a refresh**, send the `player.id` from the earlier `joined` (e.g. saved in `localStorage`); the player keeps their score and, if it's their turn, gets `your_turn` again. |
 | `guess` | `{ text: string }` | Everyone but the describer, once per turn, while guessing is open. 1–60 characters (extra spaces are trimmed). The server answers that player with `guess_locked` or `guess_error`. |
+| `speaking` | none | The describer's phone, when it first hears them talk (first word from speech-to-text, or the mic level when recording). Starts the guess clock; only the first one per turn counts. |
 
 ### Server → host only
 
@@ -232,7 +233,8 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 | `players` | `{ players: Player[] }` | the fake `setInterval` adding `mockPlayers` on `/host`. Sent on every join/leave. |
 | `round_start` | `{ round: number, totalRounds: number, multiplier: number, leader: Player \| null, gap: number }` | Start of each round. `leader` is null when nobody leads (round 1, or a tie for first); `gap` is their lead over second place. |
 | `turn_intro` | `{ round: number, totalRounds: number, turn: number, turnsInRound: number, multiplier: number, describer: Player }` | "Next up: Sam" before every turn. `turn` counts from 1 within the round. |
-| `describing` | `{ describer: Player, endsAt: number, guessEndsAt: number }` | Describing and guessing start. `endsAt` is the describer's deadline, `guessEndsAt` when guessing closes (at the latest). Sent again if the AI fails and the describer gets more time. |
+| `describing` | `{ describer: Player, endsAt: number, guessEndsAt: number, guessClockStarted: boolean }` | Describing and guessing start. `endsAt` is the describer's deadline, `guessEndsAt` when guessing closes (at the latest). Until `guessClockStarted`, `guessEndsAt` is only a placeholder: phones show "waiting for them to start talking" instead of a countdown. Sent again if the AI fails and the describer gets more time. |
+| `guess_clock` | `{ guessEndsAt: number }` | The describer said their first word: guessing now closes at `guessEndsAt`. |
 | `guesses_locked` | `{ playerIds: string[], open: boolean }` | After every guess (who has guessed, never what), and once more with `open: false` when guessing closes. |
 | `banned_buzz` | `{ playerId: string, word: string }` | → `playBuzzer()` on the host |
 | `processing` | `{ describer: Player }` | *(host "drawing" screen not built yet)* |

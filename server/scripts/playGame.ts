@@ -63,6 +63,8 @@ export async function playGame({ url, timeoutMs = 30_000, log = () => {} }: Opti
           refuse: "a goose being extremely dramatic",
         };
         if (bot.plan === "silent") return;
+        // A phone says when it hears the first word; the audio bot doesn't, so /submit starts the guess clock.
+        if (bot.plan !== "audio") client.socket.emit("speaking");
         const fields =
           bot.plan === "audio"
             ? { roomCode: code, playerId: player.id, audio: fakeAudio() }

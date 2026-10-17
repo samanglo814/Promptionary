@@ -18,14 +18,15 @@ type Props = {
   myName: string;
   describerName: string;
   guessEndsAt?: number; // when guessing closes (epoch ms)
+  clockStarted: boolean; // false until the describer says their first word: no countdown yet, full value
   locked: { text: string; speed: number } | null; // from "guess_locked"
   sending: boolean; // sent, waiting for the server to lock it in
   error: string;
   onGuess: (text: string) => void;
 };
 
-export default function GuessScreen({ myName, describerName, guessEndsAt, locked, sending, error, onGuess }: Props) {
-  const msLeft = useMsLeft(guessEndsAt);
+export default function GuessScreen({ myName, describerName, guessEndsAt, clockStarted, locked, sending, error, onGuess }: Props) {
+  const msLeft = useMsLeft(clockStarted ? guessEndsAt : undefined);
   const [text, setText] = useState("");
 
   // Safety net: typed something but never tapped lock? It's sent in the last second, so a
@@ -36,7 +37,7 @@ export default function GuessScreen({ myName, describerName, guessEndsAt, locked
   }, [text]);
   const autoLocked = useRef(false);
   useEffect(() => {
-    if (!guessEndsAt || locked || sending) return;
+    if (!guessEndsAt || !clockStarted || locked || sending) return;
     const timer = setTimeout(() => {
       const typed = textRef.current.trim();
       if (typed && !autoLocked.current) {
@@ -45,7 +46,7 @@ export default function GuessScreen({ myName, describerName, guessEndsAt, locked
       }
     }, Math.max(0, guessEndsAt - Date.now() - 1000));
     return () => clearTimeout(timer);
-  }, [guessEndsAt, locked, sending, onGuess]);
+  }, [guessEndsAt, clockStarted, locked, sending, onGuess]);
 
   if (locked) {
     return (
@@ -80,7 +81,9 @@ export default function GuessScreen({ myName, describerName, guessEndsAt, locked
       <Label tone="human">{myName} · Guesser</Label>
       <h1 className="font-display text-[40px] leading-[1.04]">What&apos;s the secret?</h1>
       <div className="flex items-center justify-between">
-        <p className="text-[15px] text-muted">{describerName} is describing.</p>
+        <p className="text-[15px] text-muted">
+          {clockStarted ? `${describerName} is describing.` : `Waiting for ${describerName} to start talking…`}
+        </p>
         {secondsLeft !== null && (
           <span className={`font-display text-[42px] leading-none tabular-nums ${secondsLeft <= 5 ? "text-ai" : "text-point"}`}>
             {secondsLeft}s

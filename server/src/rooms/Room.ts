@@ -28,9 +28,11 @@ import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
                                                                    ↘ end of a round: next round_start
                                                                    ↘ last turn of the game: game_over → hall_of_shame
 
-  While someone describes, everyone else can type one guess, until config.guessMs after describing
-  started (or until everyone has guessed). Once both the drawing and the guesses are in, one AI call
-  judges them together (fewer calls, for the free tier), and the reveal follows.
+  While someone describes, everyone else can type one guess, until config.guessMs after the describer
+  starts talking (or until everyone has guessed). The phone says when it hears the first word ("speaking");
+  a /submit without it counts as the start. So a describer who hesitates doesn't cost the guessers speed.
+  Once both the drawing and the guesses are in, one AI call judges them together (fewer calls, for the
+  free tier), and the reveal follows.
 
   If the AI can't help (down, or out of free requests), the game keeps going: drawings and guesses are
   scored by shared words instead (wordMatchScore). If it can't even transcribe, the describer gets one
@@ -73,7 +75,8 @@ type Turn = {
   endsAt: number; // the describer's deadline (moves later if the AI fails)
   firstSubmitAt?: number; // for the speed bonus, so an AI failure doesn't change it
   aiFailures: number; // how many times the AI failed this turn; after MAX_AI_FAILURES the turn moves on
-  guessEndsAt: number;
+  guessEndsAt: number; // provisional (the describing deadline) until the guess clock starts
+  guessClockAt?: number; // when the describer started talking: guess speed counts from here
   guessesOpen: boolean;
   guessTimer?: NodeJS.Timeout;
   guesses: Map<string, Guess>; // by player id, in the order they came in
@@ -183,7 +186,7 @@ export class Room {
     }
     if (!turn.guessesOpen) return;
     const describer = this.describer();
-    socket.emit("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
+    socket.emit("describing", this.describingPayload(turn, describer));
     const guess = turn.guesses.get(playerId);
     if (guess) socket.emit("guess_locked", { text: guess.text, speed: guess.speed });
   }
@@ -338,7 +341,7 @@ export class Room {
       target: pickTarget(this.deps.targets, this.usedTargets),
       startedAt: now,
       endsAt: now + config.describeMs,
-      guessEndsAt: now + config.guessMs,
+      guessEndsAt: now + config.describeMs + config.submitGraceMs,
       guessesOpen: true,
       guesses: new Map(),
       aiFailures: 0,
@@ -352,8 +355,7 @@ export class Room {
     if (describer.socketId) {
       this.deps.io.to(describer.socketId).emit("your_turn", { target: publicTarget(turn.target), endsAt: turn.endsAt });
     }
-    this.toRoom("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
-    turn.guessTimer = setTimeout(() => this.closeGuesses(turn), config.guessMs);
+    this.toRoom("describing", this.describingPayload(turn, describer));
     this.after(config.describeMs + config.submitGraceMs, () => this.timeUp());
     this.closeGuessesIfAllIn(); // e.g. nobody else is connected
   }
@@ -369,7 +371,8 @@ export class Room {
     const text = rawText.trim().replace(/\s+/g, " ");
     if (text.length < 1 || text.length > this.deps.config.maxGuessLength) return "invalid_guess";
 
-    const speed = speedPercent(this.deps.config, Date.now() - turn.startedAt);
+    // Before the describer says a word there's nothing to guess from, so it's still full speed.
+    const speed = speedPercent(this.deps.config, turn.guessClockAt ? Date.now() - turn.guessClockAt : 0);
     turn.guesses.set(playerId, { playerId, text, speed });
     const socketId = this.players.get(playerId)!.socketId;
     if (socketId) this.deps.io.to(socketId).emit("guess_locked", { text, speed });
@@ -377,6 +380,29 @@ export class Room {
     this.toRoom("guesses_locked", { playerIds: [...turn.guesses.keys()], open: true });
     this.closeGuessesIfAllIn();
     return null;
+  }
+
+  private describingPayload(turn: Turn, describer: PlayerState) {
+    const { endsAt, guessEndsAt, guessClockAt } = turn;
+    return { describer: publicPlayer(describer), endsAt, guessEndsAt, guessClockStarted: Boolean(guessClockAt) };
+  }
+
+  // Called by the "speaking" socket event: the describer's phone heard their first word.
+  speaking(playerId: string) {
+    const turn = this.turn;
+    if (this.phase !== "describing" || turn?.describerId !== playerId) return;
+    this.startGuessClock(turn);
+  }
+
+  // Guessing closes config.guessMs after the describer starts talking. Only the first call counts.
+  private startGuessClock(turn: Turn) {
+    if (turn.guessClockAt || !turn.guessesOpen) return;
+    const now = Date.now();
+    turn.guessClockAt = now;
+    turn.guessEndsAt = now + this.deps.config.guessMs;
+    clearTimeout(turn.guessTimer);
+    turn.guessTimer = setTimeout(() => this.closeGuesses(turn), turn.guessEndsAt - now);
+    this.toRoom("guess_clock", { guessEndsAt: turn.guessEndsAt });
   }
 
   // Close guessing early once everyone still connected (except the describer) has guessed.
@@ -412,6 +438,7 @@ export class Room {
     const describer = this.describer();
     const target = turn.target;
     turn.firstSubmitAt ??= Date.now();
+    this.startGuessClock(turn); // in case the phone never said it heard speech
     this.clearTimer();
     this.phase = "processing";
     this.toRoom("processing", { describer: publicPlayer(describer) });
@@ -471,7 +498,7 @@ export class Room {
     if (describer.socketId) {
       this.deps.io.to(describer.socketId).emit("your_turn", { target: publicTarget(turn.target), endsAt: turn.endsAt });
     }
-    this.toRoom("describing", { describer: publicPlayer(describer), endsAt: turn.endsAt, guessEndsAt: turn.guessEndsAt });
+    this.toRoom("describing", this.describingPayload(turn, describer));
     this.after(Math.max(0, turn.endsAt - Date.now()) + config.submitGraceMs, () => this.timeUp());
   }
 
@@ -479,6 +506,8 @@ export class Room {
   private timeUp() {
     const turn = this.turn;
     if (!turn) return;
+    // Not a word all turn: there was nothing to guess from, so guessing ends with it.
+    if (!turn.guessClockAt) this.closeGuesses(turn);
     this.endUndescribed(turn, "Total silence. The AI drew exactly what you said.");
   }
 
