@@ -13,6 +13,8 @@ npm run dev            # http://localhost:4000, restarts on save
 
 Then point the web app at it: set `NEXT_PUBLIC_SERVER_URL=http://localhost:4000` in `web/.env`.
 
+Testing with phones? Set `PUBLIC_URL` in `server/.env` to the same address as `NEXT_PUBLIC_SERVER_URL` (e.g. `http://192.168.1.20:4000`), or the describer's phone can't load the target image.
+
 ## Check it
 
 | Command | What it does |
