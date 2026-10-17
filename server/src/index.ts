@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createGameServer } from "./app.js";
 import { createGeminiAi, geminiClient } from "./ai/gemini.js";
 import { ImageStore } from "./ai/images.js";
+import { drawWithPollinations } from "./ai/pollinations.js";
 
 const port = Number(process.env.PORT ?? 4000);
 const clientOrigin = (process.env.CLIENT_ORIGIN ?? "http://localhost:3000")
@@ -19,6 +20,9 @@ const ai = apiKey
       generate: geminiClient(apiKey),
       textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
       imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
+      drawImage: process.env.IMAGE_PROVIDER === "pollinations"
+        ? (prompt) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN })
+        : undefined,
       images,
     })
   : undefined;
@@ -26,4 +30,9 @@ const ai = apiKey
 const server = createGameServer({ clientOrigin, ai, images, publicUrl });
 const actualPort = await server.listen(port);
 console.log(`Server listening on http://localhost:${actualPort} (web app: ${clientOrigin.join(", ")})`);
-console.log(apiKey ? `AI: Gemini (images served from ${publicUrl})` : "AI: fake (set GEMINI_API_KEY for the real one)");
+const drawer = process.env.IMAGE_PROVIDER === "pollinations" ? "Pollinations" : "Gemini";
+console.log(
+  apiKey
+    ? `AI: Gemini, drawn by ${drawer} (images served from ${publicUrl})`
+    : "AI: fake (set GEMINI_API_KEY for the real one)",
+);

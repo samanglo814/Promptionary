@@ -15,6 +15,8 @@ Then point the web app at it: set `NEXT_PUBLIC_SERVER_URL=http://localhost:4000`
 
 Testing with phones? Set `PUBLIC_URL` in `server/.env` to the same address as `NEXT_PUBLIC_SERVER_URL` (e.g. `http://192.168.1.20:4000`), or the describer's phone can't load the target image.
 
+Phone browsers only allow the mic on `https://` pages, so for voice on phones run `./dev-tunnel.sh` from the repo root instead (needs `brew install cloudflared`). It starts both apps behind free Cloudflare tunnels and prints an `https://` host address; phones can join from any network. Your `.env` files aren't changed.
+
 ## Check it
 
 | Command | What it does |
@@ -52,6 +54,8 @@ With `GEMINI_API_KEY` set in `.env`, rounds go through Gemini ([`src/ai/gemini.t
 
 Each call has a 30s timeout and one retry (not for errors like a bad key or no credits). If it still fails, `/submit` returns 502 and the describer gets their turn back.
 Drawn images are shrunk to 768px JPEGs (about 100 KB instead of a 1 MB PNG), kept in memory, and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_IMAGE_MODEL`.
+
+The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=pollinations` to draw with [Pollinations](https://pollinations.ai) instead ([`src/ai/pollinations.ts`](src/ai/pollinations.ts)): free, no key, slower (10–30s a drawing). Without a token it rate-limits requests close together; a free token from [auth.pollinations.ai](https://auth.pollinations.ai) in `POLLINATIONS_TOKEN` raises the limit. Gemini still does everything else.
 
 `npm run live:gemini` plays a few rounds against the real API and saves the drawings to `live-output/`.
 

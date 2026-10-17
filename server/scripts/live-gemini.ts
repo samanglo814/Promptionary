@@ -2,6 +2,7 @@ import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createGeminiAi, geminiClient } from "../src/ai/gemini.js";
 import { ImageStore } from "../src/ai/images.js";
+import { drawWithPollinations } from "../src/ai/pollinations.js";
 import { loadTargets } from "../src/targets.js";
 
 // Live smoke test of the Gemini pipeline: npm run live:gemini [-- out-dir]
@@ -19,6 +20,9 @@ const ai = createGeminiAi({
   generate: geminiClient(apiKey),
   textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
   imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
+  drawImage: process.env.IMAGE_PROVIDER === "pollinations"
+    ? (prompt) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN })
+    : undefined,
   images,
 });
 

@@ -50,6 +50,8 @@ export type GeminiOptions = {
   images: ImageStore;
   // Calls Gemini. Tests pass a fake; the server passes geminiClient(apiKey).
   generate: Generate;
+  // Draws instead of the Gemini image model, e.g. drawWithPollinations (free, no billing needed).
+  drawImage?: (prompt: string) => Promise<{ data: Buffer; mimeType: string } | undefined>;
   // Loads the target image so Gemini can compare it. Defaults to reading it from disk, or fetching imageUrl.
   loadImage?: (url: string) => Promise<{ data: Buffer; mimeType: string }>;
 };
@@ -113,7 +115,8 @@ export function createGeminiAi(options: GeminiOptions): Ai {
       const targetImage = loadImage(target.imageUrl);
       targetImage.catch(() => {}); // awaited below; don't crash on an early rejection
 
-      const drawn = await drawImage(generate, imageModel, transcript);
+      const prompt = drawPrompt(transcript);
+      const drawn = options.drawImage ? await options.drawImage(prompt) : await drawImage(generate, imageModel, prompt);
       if (!drawn) return refusal(transcript);
 
       const imageUrl = images.add(drawn.data, drawn.mimeType);
@@ -124,11 +127,14 @@ export function createGeminiAi(options: GeminiOptions): Ai {
 }
 
 // Draws the transcript nearly verbatim, so the describer's mistakes stay in the picture.
+const drawPrompt = (transcript: string) =>
+  `Draw this, exactly as described, as a single colorful illustration with no text: ${transcript}`;
+
 // Returns undefined when Gemini refuses.
-async function drawImage(generate: Generate, model: string, transcript: string) {
+async function drawImage(generate: Generate, model: string, prompt: string) {
   const res = await generate({
     model,
-    contents: `Draw this, exactly as described, as a single colorful illustration with no text: ${transcript}`,
+    contents: prompt,
     config: { responseModalities: [Modality.IMAGE], imageConfig: { aspectRatio: "1:1" } },
   });
 
