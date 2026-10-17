@@ -23,7 +23,7 @@ const ai = apiKey
     })
   : undefined;
 
-const server = createGameServer({ clientOrigin, ai, images });
+const server = createGameServer({ clientOrigin, ai, images, publicUrl });
 const actualPort = await server.listen(port);
 console.log(`Server listening on http://localhost:${actualPort} (web app: ${clientOrigin.join(", ")})`);
 console.log(apiKey ? `AI: Gemini (images served from ${publicUrl})` : "AI: fake (set GEMINI_API_KEY for the real one)");

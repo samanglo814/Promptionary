@@ -6,8 +6,10 @@ import {
   type GenerateContentResponse,
   type Part,
 } from "@google/genai";
+import { readLocalTargetImage } from "../targets.js";
 import type { Target } from "../types.js";
 import type { ImageStore } from "./images.js";
+import { toJpeg } from "./jpeg.js";
 import type { Ai, Drawing } from "./index.js";
 
 // The real AI pipeline (README, "AI pipeline"): transcribe → draw → score + caption.
@@ -48,7 +50,7 @@ export type GeminiOptions = {
   images: ImageStore;
   // Calls Gemini. Tests pass a fake; the server passes geminiClient(apiKey).
   generate: Generate;
-  // Loads the target image so Gemini can compare it. Defaults to fetching imageUrl.
+  // Loads the target image so Gemini can compare it. Defaults to reading it from disk, or fetching imageUrl.
   loadImage?: (url: string) => Promise<{ data: Buffer; mimeType: string }>;
 };
 
@@ -59,7 +61,7 @@ export function geminiClient(apiKey: string): Generate {
 
 export function createGeminiAi(options: GeminiOptions): Ai {
   const { textModel, imageModel, images } = options;
-  const loadImage = cached(options.loadImage ?? fetchImage);
+  const loadImage = cached(options.loadImage ?? (async (url) => readLocalTargetImage(url) ?? fetchImage(url)));
 
   // One retry, each attempt with its own timeout. Errors that won't go away (bad key, no credits) aren't retried.
   const generate: Generate = async (params) => {
@@ -133,7 +135,7 @@ async function drawImage(generate: Generate, model: string, transcript: string) 
   const candidate = res.candidates?.[0];
   const image = candidate?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
   if (image?.data) {
-    return { data: Buffer.from(image.data, "base64"), mimeType: image.mimeType ?? "image/png" };
+    return { data: await toJpeg(Buffer.from(image.data, "base64")), mimeType: "image/jpeg" };
   }
   // No image: blocked by safety filters, or the model answered in words instead (also a refusal).
   if (res.promptFeedback?.blockReason || blockedReasons.has(String(candidate?.finishReason)) || candidate) {

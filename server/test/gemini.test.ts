@@ -5,7 +5,11 @@ import { createGeminiAi, parseJudgement, type Generate } from "../src/ai/gemini.
 import { ImageStore } from "../src/ai/images.js";
 
 const target = { id: "dog-skateboard", imageUrl: "https://example.com/dog.png", bannedWords: ["dog"] };
-const png = Buffer.from("fake png bytes");
+// A real 1×1 PNG, since drawn images are converted to JPEG.
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 const imageResponse = {
   candidates: [{ finishReason: "STOP", content: { parts: [{ inlineData: { mimeType: "image/png", data: png.toString("base64") } }] } }],
@@ -63,6 +67,7 @@ describe("gemini ai", () => {
       { imageUrl: "", score: 42, gotRight: ["skateboard"], gotWrong: ["it's a cat, not a dog"], caption: "Close, if you squint." },
     );
     assert.match(String(calls[0]!.contents), /a furry barking friend on a plank/);
+    assert.match(JSON.stringify(calls[1]!.contents), /"mimeType":"image\/jpeg"/);
   });
 
   test("a blocked image is a refusal, not an error", async () => {

@@ -10,7 +10,7 @@ import { defaultConfig, type GameConfig } from "./config.js";
 import { submitRouter, uploadErrors } from "./http/submit.js";
 import { RoomStore } from "./rooms/RoomStore.js";
 import { registerSockets } from "./sockets.js";
-import { loadTargets } from "./targets.js";
+import { loadTargets, targetImagesDir } from "./targets.js";
 import type { ClientToServerEvents, ServerToClientEvents } from "./types.js";
 
 // What the server remembers about each connection.
@@ -31,6 +31,8 @@ export type ServerOptions = {
   ai?: Ai;
   // Where the AI keeps the images it draws; served at /images/:id.
   images?: ImageStore;
+  // The server's address as browsers see it, for target image URLs. Defaults to http://localhost:4000.
+  publicUrl?: string;
 };
 
 export type GameServer = {
@@ -57,9 +59,10 @@ export function createGameServer(options: ServerOptions): GameServer {
     io,
     config,
     ai: options.ai ?? createFakeAi(config.fakeAiDelayMs),
-    targets: loadTargets(),
+    targets: loadTargets(options.publicUrl ?? "http://localhost:4000"),
   });
   registerSockets(io, rooms);
+  app.use("/targets", express.static(targetImagesDir, { maxAge: "1d" }));
   if (options.images) app.use(options.images.router());
   app.use(submitRouter(rooms, config));
   app.use(uploadErrors);

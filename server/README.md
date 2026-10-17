@@ -25,7 +25,19 @@ Then point the web app at it: set `NEXT_PUBLIC_SERVER_URL=http://localhost:4000`
 ## Tweak the game
 
 Every rule (phase timings, player limits, rounds, banned-word penalty) is in [`src/config.ts`](src/config.ts).
-Target images and banned words are in [`data/targets.json`](data/targets.json).
+Targets (image prompt, banned words, difficulty) are in [`data/targets.json`](data/targets.json).
+
+## Target images
+
+Each target's image is `data/images/<id>.jpg`, drawn by Gemini from its `prompt` and served at `/targets/<id>.jpg` (using `PUBLIC_URL`). The images are committed, so you only need a key to make new ones:
+
+```bash
+npm run generate:images                    # targets that don't have an image yet
+npm run generate:images -- frog-wedding    # redraw specific ones
+npm run generate:images -- --all           # redraw everything
+```
+
+To add a target, add an entry to `targets.json` (`id` in kebab-case, since Gemini reads it as a hint when scoring), run the script, and look at the image before committing. If the image has words in it that give the answer away, add something like "no labels" to the prompt and redraw. A target without an image shows a placeholder.
 
 ## The AI
 
@@ -37,13 +49,14 @@ With `GEMINI_API_KEY` set in `.env`, rounds go through Gemini ([`src/ai/gemini.t
 4. **Score and caption** in one call: the text model compares the target and the drawing and returns JSON.
 
 Each call has a 30s timeout and one retry (not for errors like a bad key or no credits). If it still fails, `/submit` returns 502 and the describer gets their turn back.
-Drawn images are kept in memory and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_IMAGE_MODEL`.
+Drawn images are shrunk to 768px JPEGs (about 100 KB instead of a 1 MB PNG), kept in memory, and served at `GET /images/:id`, using `PUBLIC_URL` as the address. Model names come from `GEMINI_TEXT_MODEL` / `GEMINI_IMAGE_MODEL`.
+
+`npm run live:gemini` plays a few rounds against the real API and saves the drawings to `live-output/`.
 
 Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Typed text is used as the transcript, audio gets a canned one, the score is a hash of the words, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
 
 ## What's fake for now
 
-- **Target images** are placeholders.
 - **Hall of Shame** is built from rounds kept in memory, not Tiger Data yet.
 
 ## Layout
@@ -62,6 +75,7 @@ src/
   ai/               the AI interface, Gemini, the fake AI, and the drawn-image store
   bannedWords.ts
   targets.ts
-scripts/            bot game + helpers shared with tests
+data/               targets.json and the target images
+scripts/            bot game, generate:images, live:gemini, helpers shared with tests
 test/
 ```
