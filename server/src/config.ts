@@ -88,7 +88,7 @@ export const defaultConfig: GameConfig = {
   maxGuessLength: 60,
 
   maxNameLength: 16,
-  maxTextLength: 200,
+  maxTextLength: 500,
   maxAudioBytes: 5 * 1024 * 1024,
 
   fakeAiDelayMs: 1_500,

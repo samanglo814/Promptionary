@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { GenerateContentParameters, GenerateContentResponse } from "@google/genai";
-import { createGeminiAi, parseGuessScores, parseJudgement, type Generate } from "../src/ai/gemini.js";
+import { createGeminiAi, parseGuessScores, parseJudgement, withKeyRotation, type Generate } from "../src/ai/gemini.js";
 import { ImageStore } from "../src/ai/images.js";
 
 const target = { id: "dog-skateboard", imageUrl: "https://example.com/dog.png", bannedWords: ["dog"] };
@@ -185,5 +185,62 @@ describe("gemini ai", () => {
     } finally {
       server.close();
     }
+  });
+
+  test("if judging fails, the drawing is scored by shared words instead", async () => {
+    const original = console.error;
+    console.error = () => {}; // the fallback is logged; keep test output clean
+    const { ai } = fakeGemini({
+      image: () => imageResponse,
+      text: () => {
+        throw Object.assign(new Error("quota"), { status: 429 });
+      },
+    });
+    const drawing = await ai.draw("a dog on a skateboard", target);
+    console.error = original;
+    assert.match(drawing.imageUrl, /\/images\//);
+    assert.ok(drawing.score > 0, "shares words with dog-skateboard");
+    assert.ok(drawing.caption.length > 0);
+  });
+});
+
+describe("gemini keys", () => {
+  const outOfQuota = () => Object.assign(new Error("quota"), { status: 429 });
+  const ok = textResponse("ok");
+
+  test("an out-of-quota key hands over to the next one, and later calls stay there", async () => {
+    const calls: string[] = [];
+    const generate = withKeyRotation([
+      async () => {
+        calls.push("a");
+        throw outOfQuota();
+      },
+      async () => {
+        calls.push("b");
+        return ok;
+      },
+    ]);
+    const original = console.warn;
+    console.warn = () => {};
+    await generate({ model: "m", contents: "hi" });
+    await generate({ model: "m", contents: "hi" });
+    console.warn = original;
+    assert.deepEqual(calls, ["a", "b", "b"]);
+  });
+
+  test("other errors don't switch keys, and running out on every key throws", async () => {
+    const badKey = withKeyRotation([
+      async () => {
+        throw Object.assign(new Error("bad key"), { status: 400 });
+      },
+      async () => ok,
+    ]);
+    await assert.rejects(badKey({ model: "m", contents: "hi" }), /bad key/);
+
+    const allOut = withKeyRotation([async () => Promise.reject(outOfQuota()), async () => Promise.reject(outOfQuota())]);
+    const original = console.warn;
+    console.warn = () => {};
+    await assert.rejects(allOut({ model: "m", contents: "hi" }), /quota/);
+    console.warn = original;
   });
 });

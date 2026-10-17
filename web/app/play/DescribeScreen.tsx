@@ -28,6 +28,8 @@ type Mode = "voice" | "type";
 
 // Longest typed description allowed. About what you could say in 20 seconds.
 const MAX_CHARS = 200;
+// Spoken descriptions run longer than typed ones; the server takes up to 500 characters.
+const MAX_SPOKEN_CHARS = 500;
 
 // Finds which banned words appear in what the player typed.
 // \b means "word boundary", so "dog" matches "a dog" but not "dogma".
@@ -142,6 +144,7 @@ export default function DescribeScreen({ myName, target, roomCode, playerId, end
               key={attempt}
               maxSeconds={turnSecondsLeft === null ? undefined : Math.max(1, turnSecondsLeft)}
               onRecorded={(audio) => sendDescription(() => submitAudio(audio, roomCode, playerId))}
+              onTranscript={(words) => sendDescription(() => submitText(words.slice(0, MAX_SPOKEN_CHARS), roomCode, playerId))}
             />
           </div>
 
