@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { type SubmitResult, type Target } from "@/lib/mocks";
 import { submitAudio, submitText } from "@/lib/submit";
+import { useSecondsLeft } from "@/lib/useSecondsLeft";
 import MicRecorder from "./MicRecorder";
 
 // What the parent (PlayerJoin) passes in.
@@ -12,6 +13,7 @@ type Props = {
   target: Target; // the secret image + banned words for this round
   roomCode: string; // sent along with the description so the server knows which room
   playerId: string; // ...and which player
+  endsAt?: number; // when the server stops accepting descriptions (epoch ms); unset with mocks
   onSubmitted: (result: SubmitResult) => void; // called when /submit answers
 };
 
@@ -35,7 +37,10 @@ function bannedWordsIn(text: string, banned: string[]) {
 // The phone screen for the player whose turn it is.
 // Shows the secret image and banned words, takes their description (voice or typed),
 // and sends it to /submit.
-export default function DescribeScreen({ target, roomCode, playerId, onSubmitted }: Props) {
+export default function DescribeScreen({ target, roomCode, playerId, endsAt, onSubmitted }: Props) {
+  // Seconds left in the turn. The round clock starts when the turn starts, not when the
+  // player taps the mic, so the recording must stop by then too. null with mocks.
+  const turnSecondsLeft = useSecondsLeft(endsAt);
   const [mode, setMode] = useState<Mode>("voice");
   // What they've typed so far (typing mode only).
   const [text, setText] = useState("");
@@ -107,6 +112,7 @@ export default function DescribeScreen({ target, roomCode, playerId, onSubmitted
               and stops on its own at 0. `key` lets us reset it after an error. */}
           <MicRecorder
             key={attempt}
+            maxSeconds={turnSecondsLeft === null ? undefined : Math.max(1, turnSecondsLeft)}
             onRecorded={(audio) => sendDescription(() => submitAudio(audio, roomCode, playerId))}
           />
 

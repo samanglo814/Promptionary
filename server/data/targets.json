@@ -1,0 +1,122 @@
+[
+  {
+    "id": "dog-skateboard",
+    "prompt": "A scruffy dog wearing sunglasses riding a skateboard down a steep city street",
+    "bannedWords": ["dog", "puppy", "skateboard", "wheels"],
+    "difficulty": 1
+  },
+  {
+    "id": "goose-attack",
+    "prompt": "An angry goose chasing a terrified jogger through a park",
+    "bannedWords": ["goose", "bird", "run", "jogger", "chase"],
+    "difficulty": 2
+  },
+  {
+    "id": "astronaut-bath",
+    "prompt": "An astronaut in a full spacesuit relaxing in a bubble bath, a rubber duck floating nearby",
+    "bannedWords": ["astronaut", "space", "bath", "bathtub", "helmet"],
+    "difficulty": 2
+  },
+  {
+    "id": "cake-volcano",
+    "prompt": "A giant layered birthday cake erupting like a volcano, frosting lava pouring down its sides",
+    "bannedWords": ["cake", "volcano", "lava", "erupt", "dessert"],
+    "difficulty": 2
+  },
+  {
+    "id": "cat-business",
+    "prompt": "A serious cat in a business suit and tie pointing at a blank bar chart with no labels, in an office",
+    "bannedWords": ["cat", "kitten", "suit", "tie", "office"],
+    "difficulty": 1
+  },
+  {
+    "id": "octopus-piano",
+    "prompt": "An octopus playing a grand piano on a concert stage, every tentacle on different keys",
+    "bannedWords": ["octopus", "tentacle", "piano", "keys", "music"],
+    "difficulty": 3
+  },
+  {
+    "id": "grandma-dragon",
+    "prompt": "A grandmother calmly knitting a scarf while riding on the back of a flying dragon",
+    "bannedWords": ["grandma", "grandmother", "dragon", "knit", "old"],
+    "difficulty": 2
+  },
+  {
+    "id": "snowman-beach",
+    "prompt": "A melting snowman sunbathing on a beach towel under an umbrella, holding a cold drink",
+    "bannedWords": ["snowman", "snow", "beach", "sun", "melt"],
+    "difficulty": 2
+  },
+  {
+    "id": "penguin-waiter",
+    "prompt": "A penguin waiter carrying a tray of spaghetti through a fancy restaurant",
+    "bannedWords": ["penguin", "waiter", "restaurant", "spaghetti", "pasta"],
+    "difficulty": 2
+  },
+  {
+    "id": "shark-shopping",
+    "prompt": "A shark pushing a shopping cart full of fish down a supermarket aisle, plain unlabeled shelves",
+    "bannedWords": ["shark", "shop", "cart", "supermarket", "grocery"],
+    "difficulty": 2
+  },
+  {
+    "id": "toast-surfing",
+    "prompt": "A slice of toast with a happy face surfing a giant wave of melted butter",
+    "bannedWords": ["toast", "bread", "surf", "wave", "butter"],
+    "difficulty": 3
+  },
+  {
+    "id": "giraffe-elevator",
+    "prompt": "A giraffe squeezed into a tiny office elevator, its neck bent against the ceiling, office workers staring",
+    "bannedWords": ["giraffe", "elevator", "lift", "neck", "tall"],
+    "difficulty": 3
+  },
+  {
+    "id": "robot-garden",
+    "prompt": "A rusty old robot carefully watering a single tiny flower in a vegetable garden",
+    "bannedWords": ["robot", "flower", "water", "garden", "plant"],
+    "difficulty": 1
+  },
+  {
+    "id": "knight-chicken",
+    "prompt": "A knight in shining armor charging into battle riding a giant chicken",
+    "bannedWords": ["knight", "armor", "chicken", "horse", "battle"],
+    "difficulty": 2
+  },
+  {
+    "id": "frog-wedding",
+    "prompt": "Two frogs getting married on a lily pad, one wearing a veil, a fly officiating",
+    "bannedWords": ["frog", "wedding", "marry", "bride", "lily"],
+    "difficulty": 3
+  },
+  {
+    "id": "bear-dentist",
+    "prompt": "A nervous bear in a dentist's chair while a tiny rabbit dentist examines its teeth",
+    "bannedWords": ["bear", "dentist", "teeth", "tooth", "rabbit"],
+    "difficulty": 3
+  },
+  {
+    "id": "ghost-laundry",
+    "prompt": "A ghost at a laundromat pulling a white bedsheet out of a tumble dryer",
+    "bannedWords": ["ghost", "laundry", "sheet", "washing", "dryer"],
+    "difficulty": 3
+  },
+  {
+    "id": "ufo-pizza",
+    "prompt": "A flying saucer beaming a pizza up from a picnic table while the picnickers gasp",
+    "bannedWords": ["ufo", "alien", "pizza", "spaceship", "saucer"],
+    "difficulty": 2
+  },
+  {
+    "id": "sloth-race",
+    "prompt": "A sloth breaking the ribbon at the end of a running track, beating a group of cheetahs, no numbers or banners",
+    "bannedWords": ["sloth", "race", "cheetah", "finish", "win"],
+    "difficulty": 3
+  },
+  {
+    "id": "banana-phone",
+    "prompt": "A businessman in a boardroom meeting talking very seriously into a banana like a phone",
+    "bannedWords": ["banana", "phone", "call", "fruit", "meeting"],
+    "difficulty": 2
+  }
+]

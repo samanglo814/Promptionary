@@ -114,6 +114,18 @@ lobby ─► intro ─► describing ─► processing ─► reveal ─► scor
 | `processing` | as long as Gemini takes | result is ready |
 | `reveal` | ~8s | timer (the reveal animation takes ~5s) or host sends `next` |
 | `scoreboard` | ~6s | timer or host sends `next` |
+| `game_over` | ~10s | timer or host sends `next`, then `hall_of_shame` (stays until the host starts again) |
+
+All of these live in [`server/src/config.ts`](../server/src/config.ts).
+
+**Server behavior worth knowing:**
+- After the **last** round's reveal, the server goes straight to `game_over` (no plain scoreboard first; the podium replaces it).
+- `/submit` is accepted until `endsAt` plus a 3s grace, so an upload that started before the buzzer still counts.
+- A **timed-out** round still sends `round_result`: `transcript: ""`, `score: 0`, a placeholder `imageUrl` ("*crickets*"), and a caption about the silence.
+- **Points** for a round = `score` − 10 per banned word said (each word counts once), never below 0. Only the describer earns points. `SubmitResult.score` is still the raw match score.
+- If a **describer disconnects** before submitting, they have 5s to rejoin (see `join`) before their turn is skipped.
+- If the **host disconnects**, the room ends and everyone gets `error`.
+- The host can send `start_game` again from `game_over` or `hall_of_shame` to **play again** (scores reset, Hall of Shame keeps the whole night).
 
 ---
 
@@ -127,13 +139,13 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 |---|---|---|
 | `create_room` | *(none)* | Host page opens |
 | `start_game` | *(none)* | Host clicks Start (needs 2+ players) |
-| `next` | *(none)* | Optional: host skips ahead from `reveal` or `scoreboard` |
+| `next` | *(none)* | Optional: host skips ahead from `reveal`, `scoreboard`, or `game_over` |
 
 ### Player → server
 
 | Event | Payload | When |
 |---|---|---|
-| `join` | `{ code: string, name: string }` | Player taps Join |
+| `join` | `{ code: string, name: string, playerId?: string }` | Player taps Join. To **rejoin after a refresh**, send the `player.id` from the earlier `joined` (e.g. saved in `localStorage`); the player keeps their score and, if it's their turn, gets `your_turn` again. |
 
 ### Server → host only
 
@@ -146,7 +158,7 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 | Event | Payload | Replaces in the web app |
 |---|---|---|
 | `joined` | `{ player: Player, code: string }` | the `FAKE` `setMe(...)` in `PlayerJoin.join()` |
-| `join_error` | `{ reason: "room_not_found" \| "name_taken" \| "game_started" \| "room_full" }` | *(join form needs an error message)* |
+| `join_error` | `{ reason: "room_not_found" \| "name_taken" \| "game_started" \| "room_full" \| "invalid_name" }` (`invalid_name`: blank or over 16 characters) | *(join form needs an error message)* |
 | `your_turn` | `{ target: Target, endsAt: number }` | `mockTarget` and the "Pretend it's my turn" button |
 
 ### Server → everyone in the room
@@ -193,9 +205,11 @@ Exactly one of `audio` or `text` is sent.
 | Status | When | Phone does |
 |---|---|---|
 | `400` | missing fields, both/neither of `audio` and `text` | "Couldn't send that. Try again!" |
-| `403` | not this player's turn, or describing time is over | same message |
+| `403` | not this player's turn, already submitted, or describing time is over | same message |
 | `404` | room not found | same message |
-| `500` / `502` | Gemini failed after retries | same message, player can retry |
+| `500` / `502` | Gemini failed after retries | same message, player can retry (the server gives back the turn with at least 10s left and re-sends `your_turn`) |
+
+Error responses have the body `{ error: string }`.
 
 A blocked image is **not** an error: return `200` with `refused: true`, `imageUrl: ""`, `score: 0`, empty `gotRight`/`gotWrong`, and a caption.
 
@@ -233,7 +247,7 @@ Suggest adding both columns. `worstWords` can be computed from `transcript` + `s
 
 ## 6. Environment variables
 
-**`server/.env`**: `PORT`, `CLIENT_ORIGIN`, `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_IMAGE_MODEL`, `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `DEMO_MODE`
+**`server/.env`**: `PORT`, `CLIENT_ORIGIN`, `PUBLIC_URL` (the server's address as browsers see it, for AI image URLs; defaults to `http://localhost:PORT`), `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_IMAGE_MODEL`, `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `DEMO_MODE`
 
 **`web/.env`**: `NEXT_PUBLIC_SERVER_URL` (when unset, the web app uses mocks), `NEXT_PUBLIC_AUTH0_DOMAIN`, `NEXT_PUBLIC_AUTH0_CLIENT_ID`, `NEXT_PUBLIC_AUTH0_AUDIENCE`
 
@@ -241,11 +255,11 @@ Suggest adding both columns. `worstWords` can be computed from `transcript` + `s
 
 ## 7. Open questions
 
-Decide these together, then update this file:
+Decide these together, then update this file. The server picked a default for 1–4 so it could run; each is one line in [`server/src/config.ts`](../server/src/config.ts) or a small change.
 
-1. **Rounds per game:** one turn per player (current assumption), or a fixed number like 5 with turns cycling?
-2. **Scoring:** is a round's points just the 0–100 match score? Penalty for a banned word (e.g. −10 per buzz)?
-3. **Who gets points:** only the describer, or does everyone get something?
-4. **Reconnects:** if a phone refreshes, should it rejoin as the same player? (Would need the phone to store `player.id` and send it with `join`.)
+1. **Rounds per game:** one turn per player, or a fixed number like 5 with turns cycling? *Server default: one turn per player (`roundsPerPlayer: 1`).*
+2. **Scoring:** is a round's points just the 0–100 match score? Penalty for a banned word (e.g. −10 per buzz)? *Server default: −10 per banned word (`bannedWordPenalty`).*
+3. **Who gets points:** only the describer, or does everyone get something? *Server default: only the describer.*
+4. **Reconnects:** if a phone refreshes, should it rejoin as the same player? (Would need the phone to store `player.id` and send it with `join`.) *Server: supported (optional `playerId` on `join`); the phone side isn't built yet.*
 5. **Awards (#21):** "Closest" and "Most Wrong Masterpiece". Send them with `game_over` as `awards: { title: string, playerName: string, imageUrl: string }[]`?
 6. **Storybook (#37):** shape of the storybook data, to be added before the storybook page (#38) is built.
