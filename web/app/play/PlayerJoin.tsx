@@ -7,7 +7,8 @@
 // useEffect            = run code after the screen draws
 // useSyncExternalStore = read something from outside React (here: the URL) safely
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { mockTarget, type Player, type SubmitResult } from "@/lib/mocks";
+import { mockTarget, type Player, type SubmitResult, type Target } from "@/lib/mocks";
+import { SERVER_URL, connect, joinErrorText, type GameSocket } from "@/lib/socket";
 import DescribeScreen from "./DescribeScreen";
 
 // Read ?code= from the URL. Only works in the browser (window doesn't exist on the
@@ -18,8 +19,29 @@ const codeFromUrl = () =>
 const noSubscribe = () => () => {};
 
 // Which screen the phone is showing after joining.
-// Later the server decides this with socket events (e.g. "your_turn", "reveal").
+// With a server, socket events decide this (e.g. "your_turn", "round_intro").
 type Phase = "waiting" | "describing" | "sent";
+
+// Saved in the browser after joining, so a refreshed phone rejoins as the same player.
+type Session = { code: string; name: string; playerId: string };
+const SESSION_KEY = "reverse-charades-session";
+
+function loadSession(): Session | null {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) ?? "null");
+  } catch {
+    return null; // private browsing or corrupted value: just join fresh
+  }
+}
+
+function saveSession(session: Session | null) {
+  try {
+    if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    // Storage unavailable: rejoining after a refresh won't work, everything else does.
+  }
+}
 
 export default function PlayerJoin() {
   // ---------- Joining ----------
@@ -42,6 +64,96 @@ export default function PlayerJoin() {
   // What /submit sent back, shown on the "sent" screen.
   const [result, setResult] = useState<SubmitResult | null>(null);
 
+  // ---------- Live mode (server connected) ----------
+
+  // The live connection. null in mock mode.
+  const [socket, setSocket] = useState<GameSocket | null>(null);
+  // My secret image and when my turn ends, from "your_turn".
+  const [target, setTarget] = useState<Target>(mockTarget);
+  const [endsAt, setEndsAt] = useState<number | undefined>(undefined);
+  // What the waiting screen says, e.g. "Sam is describing…".
+  const [waitingText, setWaitingText] = useState("Waiting for the host to start…");
+  // Why joining failed (or why the game ended), shown on the join form.
+  const [joinError, setJoinError] = useState("");
+
+  useEffect(() => {
+    if (!SERVER_URL) return;
+    const s = connect();
+    // The player's id, once joined. A plain variable so every handler below sees the latest one.
+    let myId: string | null = null;
+    // True while an automatic rejoin is in flight, so its failure can be silent.
+    let rejoining = false;
+
+    // On first connect, and again after any reconnect (new socket), rejoin if we were in a room.
+    // A saved session for a different room (e.g. scanned a new QR code) is ignored.
+    s.on("connect", () => {
+      const saved = loadSession();
+      const linkCode = codeFromUrl();
+      if (saved && (!linkCode || linkCode === saved.code)) {
+        rejoining = true;
+        s.emit("join", { code: saved.code, name: saved.name, playerId: saved.playerId });
+      }
+    });
+    s.on("joined", ({ player, code }) => {
+      rejoining = false;
+      myId = player.id;
+      saveSession({ code, name: player.name, playerId: player.id });
+      setTypedCode(code);
+      setJoinError("");
+      setMe(player);
+    });
+    s.on("join_error", ({ reason }) => {
+      saveSession(null);
+      // An old room that's gone isn't worth a message; just show the join form.
+      if (rejoining) {
+        rejoining = false;
+        return;
+      }
+      setJoinError(joinErrorText[reason]);
+    });
+    s.on("your_turn", ({ target, endsAt }) => {
+      setTarget(target);
+      setEndsAt(endsAt);
+      setPhase("describing");
+    });
+    s.on("round_intro", ({ round, totalRounds, describer }) => {
+      setPhase("waiting");
+      setWaitingText(
+        describer.id === myId
+          ? `Round ${round} of ${totalRounds}: you're up! Get ready…`
+          : `Round ${round} of ${totalRounds}: ${describer.name} is up`,
+      );
+    });
+    s.on("describing", ({ describer }) => {
+      if (describer.id !== myId) setWaitingText(`${describer.name} is describing…`);
+    });
+    s.on("round_result", () => {
+      // My turn ran out before I sent anything: stop showing the describe screen.
+      setPhase((p) => (p === "describing" ? "waiting" : p));
+      setWaitingText("Look at the big screen!");
+    });
+    s.on("processing", ({ describer }) => {
+      if (describer.id !== myId) setWaitingText("The AI is drawing… look at the big screen!");
+    });
+    s.on("game_over", () => {
+      setPhase("waiting");
+      setWaitingText("Game over! Check the big screen 🏆");
+    });
+    s.on("error", ({ message }) => {
+      // Players only get this when the host left: the room is gone, so back to the join form.
+      saveSession(null);
+      setMe(null);
+      setPhase("waiting");
+      setJoinError(message);
+    });
+    // Keep the connection so join() can send events.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSocket(s);
+    return () => {
+      s.close();
+    };
+  }, []);
+
   // Came from the QR code? Jump straight to the name field.
   useEffect(() => {
     if (urlCode) nameRef.current?.focus();
@@ -54,8 +166,14 @@ export default function PlayerJoin() {
     e.preventDefault(); // stop the browser from reloading the page on form submit
     if (!canJoin) return;
 
-    // FAKE: pretend the server accepted us.
-    // Replace with socket.emit("join", { code, name }) once the server exists.
+    if (socket) {
+      // The server answers with "joined" or "join_error" (handled above).
+      setJoinError("");
+      socket.emit("join", { code: code.trim().toUpperCase(), name: name.trim() });
+      return;
+    }
+
+    // FAKE (mock mode): pretend the server accepted us.
     setMe({ id: crypto.randomUUID(), name: name.trim(), score: 0 });
   }
 
@@ -66,10 +184,11 @@ export default function PlayerJoin() {
   if (me && phase === "describing") {
     return (
       <DescribeScreen
-        // FAKE: the server will send the real target with a "your_turn" event.
-        target={mockTarget}
+        // From "your_turn" (mockTarget in mock mode).
+        target={target}
         roomCode={code}
         playerId={me.id}
+        endsAt={endsAt}
         onSubmitted={(r) => {
           setResult(r);
           setPhase("sent");
@@ -94,9 +213,11 @@ export default function PlayerJoin() {
         )}
 
         {/* TEMP: lets you replay the flow without a server */}
-        <button onClick={() => setPhase("waiting")} className="underline opacity-60">
-          Back to waiting (test)
-        </button>
+        {!socket && (
+          <button onClick={() => setPhase("waiting")} className="underline opacity-60">
+            Back to waiting (test)
+          </button>
+        )}
       </main>
     );
   }
@@ -110,16 +231,18 @@ export default function PlayerJoin() {
           {me.name}
         </div>
         <h1 className="text-3xl font-black">You&apos;re in!</h1>
-        <p className="text-lg opacity-60 animate-pulse">Waiting for the host to start…</p>
+        <p className="text-lg opacity-60 animate-pulse">{waitingText}</p>
 
-        {/* TEMP: stands in for the server's "your turn" event so you can test the
-            describe screen. Remove once the socket is wired up. */}
-        <button
-          onClick={() => setPhase("describing")}
-          className="mt-6 border-2 border-ink/20 rounded-card px-5 py-2 font-bold opacity-60"
-        >
-          Pretend it&apos;s my turn (test)
-        </button>
+        {/* TEMP (mock mode only): stands in for the server's "your_turn" event so you can
+            test the describe screen. */}
+        {!socket && (
+          <button
+            onClick={() => setPhase("describing")}
+            className="mt-6 border-2 border-ink/20 rounded-card px-5 py-2 font-bold opacity-60"
+          >
+            Pretend it&apos;s my turn (test)
+          </button>
+        )}
       </main>
     );
   }
@@ -160,6 +283,8 @@ export default function PlayerJoin() {
             className="text-2xl font-bold text-center border-2 border-ink/10 rounded-card py-3 outline-none focus:border-pop"
           />
         </label>
+
+        {joinError && <p className="text-pop font-bold text-center">{joinError}</p>}
 
         <button
           type="submit"
