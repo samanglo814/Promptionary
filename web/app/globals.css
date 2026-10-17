@@ -2,6 +2,8 @@
 
 @import "tailwindcss";
 
+/* Design tokens. Each --color-x becomes Tailwind classes like bg-x / text-x,
+   and --radius-card becomes rounded-card. */
 @theme {
   --color-ink: #1a1423;
   --color-paper: #fff8ef;
@@ -20,4 +22,18 @@ body {
 @keyframes pop {
   from { transform: scale(0.6); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }
+}
+
+/* Reveal: the AI's image is uncovered left to right.
+   clip-path: inset(top right bottom left) hides part of an element.
+   Starting with 100% cut off the right side = fully hidden; ending at 0 = fully shown. */
+@keyframes wipe {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* Reveal: things fade up into place (labels, transcript, score) */
+@keyframes rise {
+  from { transform: translateY(1rem); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }
