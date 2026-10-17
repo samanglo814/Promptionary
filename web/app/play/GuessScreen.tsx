@@ -1,14 +1,14 @@
 "use client";
 
 // The phone screen for everyone who isn't describing.
-// One typed guess per turn, locked in once. Faster guesses keep more of their value
+// One typed guess per turn, locked in with one tap. Faster guesses keep more of their value
 // (100% at the start, down to 70% when guessing closes). Matches the Figma's
 // "Spectator guess entry" and "Spectator locked" frames.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MAX_GUESS_CHARS } from "@/lib/socket";
 import { useMsLeft } from "@/lib/useSecondsLeft";
-import { Button, Label, Meter, Panel, TextButton } from "@/components/ui";
+import { Button, Label, Meter, Panel } from "@/components/ui";
 
 // The guess window (server config guessMs) and how much speed is worth (guessSpeedWeight).
 const GUESS_MS = 25_000;
@@ -27,8 +27,25 @@ type Props = {
 export default function GuessScreen({ myName, describerName, guessEndsAt, locked, sending, error, onGuess }: Props) {
   const msLeft = useMsLeft(guessEndsAt);
   const [text, setText] = useState("");
-  // One try only, so locking takes two taps: the first asks "sure?".
-  const [confirming, setConfirming] = useState(false);
+
+  // Safety net: typed something but never tapped lock? It's sent in the last second, so a
+  // guess isn't lost to the clock. A ref so the timer below reads the latest text.
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
+  const autoLocked = useRef(false);
+  useEffect(() => {
+    if (!guessEndsAt || locked || sending) return;
+    const timer = setTimeout(() => {
+      const typed = textRef.current.trim();
+      if (typed && !autoLocked.current) {
+        autoLocked.current = true;
+        onGuess(typed);
+      }
+    }, Math.max(0, guessEndsAt - Date.now() - 1000));
+    return () => clearTimeout(timer);
+  }, [guessEndsAt, locked, sending, onGuess]);
 
   if (locked) {
     return (
@@ -74,19 +91,16 @@ export default function GuessScreen({ myName, describerName, guessEndsAt, locked
       <form
         onSubmit={(e) => {
           e.preventDefault(); // stop the browser from reloading the page
-          if (!canSend) return;
-          if (!confirming) return setConfirming(true);
-          onGuess(guess);
+          if (canSend) onGuess(guess);
         }}
         className="flex flex-col gap-3"
       >
         <label className="flex flex-col gap-3 rounded-panel border-[1.5px] border-human bg-panel p-[18px] focus-within:border-point">
-          <Label tone="human">Your guess · {confirming ? "final?" : "editable"}</Label>
+          <Label tone="human">Your guess · one try</Label>
           <textarea
             value={text}
             onChange={(e) => {
               setText(e.target.value.replace(/\n/g, ""));
-              setConfirming(false); // changed it: ask again
             }}
             onKeyDown={(e) => {
               // Enter sends instead of adding a new line.
@@ -116,16 +130,10 @@ export default function GuessScreen({ myName, describerName, guessEndsAt, locked
         </div>
         <p className="text-sm leading-relaxed text-muted">Accuracy × speed. Being fast only helps if your guess is close.</p>
 
-        <Button type="submit" disabled={!canSend} variant={confirming ? "confirm" : "primary"}>
-          {sending ? "Locking in…" : confirming ? `Lock in “${guess.length > 22 ? guess.slice(0, 22) + "…" : guess}”` : "Lock my one guess"}
+        <Button type="submit" disabled={!canSend}>
+          {sending ? "Locking in…" : "Lock it in 🔒"}
         </Button>
-        {confirming && !sending ? (
-          <TextButton type="button" onClick={() => setConfirming(false)}>
-            Keep editing
-          </TextButton>
-        ) : (
-          <p className="text-center text-[13px] text-muted">You can edit before locking. You can&apos;t change it after.</p>
-        )}
+        <p className="text-center text-[13px] text-muted">One tap locks it. You can&apos;t change it after.</p>
         {error && <p className="text-center font-bold text-ai">{error}</p>}
       </form>
 

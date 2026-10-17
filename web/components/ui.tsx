@@ -88,17 +88,12 @@ export function Panel({
   );
 }
 
-// The one main action on a screen. variant="confirm" is the lime "are you sure?" step.
-export function Button({
-  className = "",
-  variant = "primary",
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "confirm" }) {
-  const colors = variant === "confirm" ? "border-point bg-point text-stage" : "border-action-edge bg-action text-text";
+// The one main action on a screen.
+export function Button({ className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
-      className={`min-h-[54px] w-full rounded-inner border-2 px-4 py-3.5 text-base font-bold transition-opacity disabled:opacity-40 ${colors} ${className}`}
+      className={`min-h-[54px] w-full rounded-inner border-2 border-action-edge bg-action px-4 py-3.5 text-base font-bold text-text transition-opacity disabled:opacity-40 ${className}`}
     />
   );
 }

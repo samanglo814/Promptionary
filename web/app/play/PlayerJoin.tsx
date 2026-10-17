@@ -52,7 +52,7 @@ type Receipt =
   | { kind: "guesser"; describerName: string; guess: GuessResult | null; caption: string };
 
 // Where I am on the scoreboard. gap = points behind the player one place up (0 if I lead).
-type MyStanding = { rank: number; score: number; players: number; gap: number; aheadName: string; lastTurn: number };
+type MyStanding = { rank: number; score: number; players: number; gap: number; aheadName: string; lastTurn: number; tied: boolean };
 
 // Game over, from my side.
 type FinalSummary = MyStanding & { prompterPoints: number; spectatorPoints: number; awards: Award[] };
@@ -430,7 +430,7 @@ export default function PlayerJoin() {
               </TextButton>
               <TextButton
                 onClick={() => {
-                  setStanding({ rank: 3, score: 1420, players: 5, gap: 210, aheadName: "Charisse", lastTurn: 190 });
+                  setStanding({ rank: 3, score: 1420, players: 5, gap: 210, aheadName: "Charisse", lastTurn: 190, tied: false });
                   setPhase("standing");
                 }}
               >
@@ -445,6 +445,7 @@ export default function PlayerJoin() {
                     gap: 0,
                     aheadName: "",
                     lastTurn: 0,
+                    tied: false,
                     prompterPoints: 1600,
                     spectatorPoints: 280,
                     awards: [{ title: "Sharpest guesser", playerName: me.name, imageUrl: "" }],
@@ -530,6 +531,8 @@ function myStanding(standings: { id: string; name: string; score: number; rank: 
     gap: ahead ? ahead.score - me.score : 0,
     aheadName: ahead?.name ?? "",
     lastTurn: me.lastTurn,
+    // Someone else shares my rank.
+    tied: sorted.some((p) => p.id !== me.id && p.rank === me.rank),
   };
 }
 
@@ -619,13 +622,13 @@ function ReceiptScreen({ receipt }: { receipt: Receipt }) {
 // ---------- Where I am on the scoreboard ----------
 
 function StandingScreen({ standing }: { standing: MyStanding }) {
-  const { rank, score, players, gap, aheadName, lastTurn } = standing;
+  const { rank, score, players, gap, aheadName, lastTurn, tied } = standing;
   return (
     <div className="flex flex-1 flex-col justify-center gap-4 pb-16">
       <Label tone="human">Standings</Label>
       <p className="font-display text-[120px] leading-[0.9] text-point">#{rank}</p>
       <h1 className="font-display text-[34px] leading-[1.08]">
-        {gap === 0 ? (rank === 1 ? "You're in the lead." : "Tied with the player above you.") : `${gap.toLocaleString()} behind ${aheadName}.`}
+        {gap > 0 ? `${gap.toLocaleString()} behind ${aheadName}.` : tied ? (rank === 1 ? "Tied for the lead." : "Tied with the player above you.") : "You're in the lead."}
       </h1>
       <Panel className="flex justify-between">
         <div className="flex flex-col gap-1">
@@ -652,7 +655,7 @@ function FinalScreen({ final }: { final: FinalSummary }) {
       <Label tone="point">Game over</Label>
       <p className="font-display text-[120px] leading-[0.9] text-point">#{final.rank}</p>
       <h1 className="font-display text-[34px] leading-[1.08]">
-        {final.rank === 1 ? "Champion of the night." : `${final.score.toLocaleString()} points. Respectable chaos.`}
+        {final.rank === 1 ? (final.tied ? "Joint champions of the night." : "Champion of the night.") : `${final.score.toLocaleString()} points. Respectable chaos.`}
       </h1>
       <Panel className="flex flex-col gap-3">
         <div className="flex justify-between text-[15px]">
