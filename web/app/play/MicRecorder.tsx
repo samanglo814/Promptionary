@@ -129,32 +129,42 @@ export default function MicRecorder({ maxSeconds = 20, onRecorded }: Props) {
   // ---------- What the player sees ----------
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-3">
       <button
-        // Same button does two jobs: start when idle, stop while recording.
+        // Same button does two jobs: start when idle, stop (= done, send it) while recording.
         onClick={status === "recording" ? stop : start}
         // Can't press it again once we've got a recording (the parent takes over).
         disabled={status === "done"}
-        // Big round button. Turns pink and pulses while recording.
-        className={`size-48 rounded-full text-white text-2xl font-black shadow-lg flex flex-col items-center justify-center gap-1 disabled:opacity-40 ${
-          status === "recording" ? "bg-pop animate-pulse" : "bg-ink"
+        // Big round button. Turns pink and pulses while recording, lime once it's sent.
+        className={`flex size-40 flex-col items-center justify-center gap-1 rounded-full border-4 font-bold text-text ${
+          status === "recording"
+            ? "animate-pulse border-ai bg-ai/20"
+            : status === "done"
+              ? "border-point bg-point text-stage"
+              : "border-action-edge bg-action"
         }`}
       >
         {status === "recording" ? (
           <>
             {/* Countdown while talking */}
-            <span className="text-6xl">{secondsLeft}</span>
-            <span className="text-base font-bold">Tap to stop</span>
+            <span className="font-display text-6xl leading-none text-ai">{secondsLeft}</span>
+            <span className="text-sm">Tap when done</span>
           </>
         ) : status === "done" ? (
-          "Got it!"
+          <span className="font-display text-3xl">Got it!</span>
         ) : (
-          "Tap to talk"
+          <>
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+            </svg>
+            <span className="text-base">Tap to talk</span>
+          </>
         )}
       </button>
 
       {/* Error message, only shown if something went wrong */}
-      {error && <p className="text-pop font-bold text-center max-w-xs">{error}</p>}
+      {error && <p className="max-w-xs text-center font-bold text-ai">{error}</p>}
     </div>
   );
 }

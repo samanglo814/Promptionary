@@ -14,3 +14,15 @@ export function useSecondsLeft(endsAt?: number): number | null {
   if (!endsAt) return null;
   return Math.max(0, Math.ceil((endsAt - now) / 1000));
 }
+
+// Milliseconds until `endsAt`, for meters that drain smoothly. null when there's no deadline.
+export function useMsLeft(endsAt?: number): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!endsAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, [endsAt]);
+  if (!endsAt) return null;
+  return Math.max(0, endsAt - now);
+}

@@ -3,30 +3,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type SubmitResult } from "@/lib/mocks";
+import { type GuessResult, type PrompterBreakdown, type SubmitResult } from "@/lib/mocks";
+import { Delta, Label, Panel } from "@/components/ui";
 import RefusalCard from "./RefusalCard";
 import { playBuzzer, playDrumroll, playSting } from "@/lib/sounds";
 
 // What the host page passes in.
 type Props = {
   playerName: string; // who described it
-  result: SubmitResult; // what /submit returned: images, transcript, score, caption, right/wrong
+  result: SubmitResult; // images, transcript, score, caption
+  breakdown: PrompterBreakdown | null; // how the describer's points add up (null with old servers)
+  guesses: GuessResult[]; // everyone else's guesses, scored
 };
 
 // ---------- Timing ----------
-// Everything is in milliseconds. The reveal plays in this order:
-//   0ms     original image + transcript appear
-//   900ms   the AI image starts wiping in (takes 1200ms)
-//   2100ms  the score starts counting up (takes 1500ms)
-//   3800ms  the roast caption lands, then the right/wrong chips pop in one by one
-// Change these to speed up or slow down the whole reveal.
-const WIPE_DELAY = 900;
-const WIPE_DURATION = 1200;
-const SCORE_DELAY = WIPE_DELAY + WIPE_DURATION;
-const SCORE_DURATION = 1500;
-const CAPTION_DELAY = SCORE_DELAY + SCORE_DURATION + 200; // small beat after the score settles
-const CHIPS_DELAY = CAPTION_DELAY + 600;
-const CHIP_STAGGER = 150; // gap between each chip popping in
+// Everything is in milliseconds. The reveal plays in this order (about 6.5s, inside the 8s the
+// server gives it):
+//   0ms      01 the original image
+//   500ms    02 the room's guesses, one after another
+//   ~1.6s    03 what the AI drew wipes in, then its match % counts up
+//   ~4.2s    the describer's points stack up, line by line, into a total
+//   ~5.8s    the roast caption lands
+const GUESS_DELAY = 500;
+const GUESS_STAGGER = 220;
+const WIPE_DURATION = 900;
+const SCORE_DURATION = 1100;
+const LINE_STAGGER = 180;
 
 // Counts a number up from 0 to `to`, starting after `delay` ms.
 // Returns the current number to show. Re-renders about 60 times a second while counting.
@@ -38,7 +40,6 @@ function useCountUp(to: number, duration: number, delay: number) {
     let start = 0; // when counting actually started
 
     // requestAnimationFrame calls `tick` right before the browser draws the next frame.
-    // `now` is a timestamp in ms.
     function tick(now: number) {
       if (!start) start = now + delay; // first frame: schedule the start `delay` ms from now
       // How far through the count we are, from 0 (not started) to 1 (done).
@@ -57,147 +58,173 @@ function useCountUp(to: number, duration: number, delay: number) {
   return value;
 }
 
-// Score color: blue for great, yellow for okay, pink for a miss.
-function scoreColor(score: number) {
-  if (score >= 70) return "text-cool";
-  if (score >= 40) return "text-zap";
-  return "text-pop";
-}
+// Shorthand: anim("rise", 300) → "rise 0.45s ease-out 300ms both"
+// ("both" = hidden before the delay, stays visible after).
+const anim = (name: string, delay: number, duration = 0.45) => ({ animation: `${name} ${duration}s ease-out ${delay}ms both` });
 
-// The host's big-screen reveal: what the player saw vs what the AI drew,
-// then the score, the roast caption, and what the AI got right and wrong.
-export default function RevealScreen({ playerName, result }: Props) {
-  const shownScore = useCountUp(result.score, SCORE_DURATION, SCORE_DELAY);
+export default function RevealScreen({ playerName, result, breakdown, guesses }: Props) {
+  // When each step starts depends on how many guesses there are to show.
+  const shownGuesses = guesses.slice(0, 4);
+  const wipeDelay = GUESS_DELAY + Math.max(shownGuesses.length, 1) * GUESS_STAGGER + 300;
+  const scoreDelay = wipeDelay + WIPE_DURATION;
+  const pointsDelay = scoreDelay + SCORE_DURATION + 200;
+  const shownScore = useCountUp(result.score, SCORE_DURATION, scoreDelay);
 
   // Sound, timed to the animation:
-  //   normal round → drumroll while the score counts, then a sting when it lands
-  //   refused      → a buzzer when the REFUSED stamp slams down (also at SCORE_DELAY, 2.1s)
+  //   normal round → drumroll while the match % counts, then a sting when it lands
+  //   refused      → a buzzer when the REFUSED stamp slams down
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = []; // so cleanup can cancel them
     let stopRoll = () => {}; // replaced with the real stop() once the drumroll starts
 
     if (result.refused) {
-      timers.push(setTimeout(playBuzzer, SCORE_DELAY));
+      timers.push(setTimeout(playBuzzer, scoreDelay));
     } else {
       timers.push(
         setTimeout(() => {
           stopRoll = playDrumroll(SCORE_DURATION / 1000); // Web Audio wants seconds
-        }, SCORE_DELAY),
+        }, scoreDelay),
       );
-      timers.push(setTimeout(() => playSting(result.score), SCORE_DELAY + SCORE_DURATION));
+      timers.push(setTimeout(() => playSting(result.score), scoreDelay + SCORE_DURATION));
     }
 
-    // Cleanup: if the screen changes mid-reveal (Replay, next round), cancel any
-    // sounds that haven't started yet and cut off a drumroll that's playing.
+    // Cleanup: if the screen changes mid-reveal, cancel sounds that haven't started yet
+    // and cut off a drumroll that's playing.
     return () => {
       timers.forEach(clearTimeout);
       stopRoll();
     };
-  }, [result]);
+  }, [result, scoreDelay]);
 
-  // Right and wrong go in one list so they can pop in one after another.
-  // `good` decides the color and the ✓ / ✗ symbol.
-  const chips = [
-    ...result.gotRight.map((text) => ({ text, good: true })),
-    ...result.gotWrong.map((text) => ({ text, good: false })),
-  ];
+  // The best guess gets highlighted (only if it actually scored).
+  const best = shownGuesses.reduce<GuessResult | null>((top, g) => (g.points > (top?.points ?? 0) ? g : top), null);
+
+  // The describer's points, one line each, then the total.
+  const lines = breakdown
+    ? [
+        { label: "Accuracy", value: breakdown.accuracy },
+        { label: "Clarity", value: breakdown.clarity },
+        { label: "Speed", value: breakdown.speed },
+        ...(breakdown.bannedPenalty > 0 ? [{ label: "Banned words", value: -breakdown.bannedPenalty }] : []),
+      ]
+    : [];
+  const totalDelay = pointsDelay + (lines.length + (breakdown && breakdown.multiplier > 1 ? 1 : 0)) * LINE_STAGGER;
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-8">
-      {/* What the player said, in quotes. Fades up first. */}
-      <div className="text-center animate-[rise_0.5s_ease-out_both] max-w-3xl">
-        <p className="text-lg uppercase tracking-widest opacity-60">{playerName} said</p>
-        <p className="text-4xl font-bold italic">“{result.transcript}”</p>
+    <div className="flex flex-1 flex-col gap-5">
+      {/* What the describer said */}
+      <div className="flex flex-col gap-2" style={anim("rise", 0)}>
+        <Label tone="human">{playerName} said</Label>
+        <p className="font-display text-[44px] leading-[1.08] line-clamp-2">
+          {result.transcript ? `“${result.transcript}”` : "…nothing at all. Crickets."}
+        </p>
       </div>
 
-      {/* The two images side by side (stacked on narrow screens) */}
-      <div className="flex flex-col md:flex-row gap-8 items-center">
-        {/* Left: the original secret image. Shows right away. */}
-        <figure className="flex flex-col items-center gap-3">
-          {/* Plain <img> because the images come from other sites (see DescribeScreen). */}
+      <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px_1fr] gap-[18px]">
+        {/* 01 · The original */}
+        <Panel tone="human" className="flex flex-col gap-3.5" style={anim("rise", 0)}>
+          <Label tone="human">01 · The secret image</Label>
+          {/* Plain <img> because the images come from the game server, not this site. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={result.targetImageUrl}
-            alt="The original image"
-            className="size-72 lg:size-80 object-cover rounded-card shadow-lg bg-white"
-          />
-          <figcaption className="text-lg uppercase tracking-widest opacity-60">
-            The real thing
-          </figcaption>
-        </figure>
+          <img src={result.targetImageUrl} alt="The secret image" className="aspect-[4/3] w-full rounded-inner bg-raised object-cover" />
+        </Panel>
 
-        {/* Right: what the AI drew. Wipes in from left to right after a pause.
-            The animation shorthand is: name, duration, easing, delay, fill-mode.
-            "both" = stay hidden during the delay and stay visible after it ends.
-            If the AI refused to draw it, a refusal card wipes in instead. */}
-        <figure className="flex flex-col items-center gap-3">
+        {/* 02 · The room's guesses */}
+        <Panel tone="human" className="flex flex-col gap-2.5">
+          <Label tone="human">02 · Human guesses</Label>
+          <p className="font-display text-[28px] leading-none">The room&apos;s receipts.</p>
+          {shownGuesses.length === 0 && (
+            <p className="text-[17px] text-muted" style={anim("rise", GUESS_DELAY)}>
+              Nobody locked in a guess.
+            </p>
+          )}
+          {shownGuesses.map((g, i) => {
+            const isBest = g === best;
+            return (
+              <div
+                key={g.playerId}
+                className={`flex flex-col gap-1.5 rounded-inner border bg-raised p-3.5 ${isBest ? "border-point" : "border-human"}`}
+                style={anim("rise", GUESS_DELAY + i * GUESS_STAGGER)}
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="font-extrabold">{g.playerName}</span>
+                  <span className={`text-[10px] font-extrabold ${isBest ? "text-point" : "text-human"}`}>
+                    {isBest ? "BEST GUESS" : g.points > 0 ? "SCORED" : "MISSED"}
+                  </span>
+                </div>
+                <p className="line-clamp-2 text-[17px] leading-snug">{g.text}</p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[13px] text-human">{g.accuracy}% accuracy</span>
+                  <Delta value={g.points} className="text-[17px] font-extrabold" />
+                </div>
+              </div>
+            );
+          })}
+          {guesses.length > shownGuesses.length && (
+            <p className="text-sm text-muted">+{guesses.length - shownGuesses.length} more</p>
+          )}
+        </Panel>
+
+        {/* 03 · What the AI drew */}
+        <Panel tone="ai" className="flex flex-col gap-3.5">
+          <Label tone="ai">03 · What AI heard</Label>
           {result.refused ? (
             <RefusalCard
               transcript={result.transcript}
-              className="size-72 lg:size-80"
-              style={{ animation: `wipe ${WIPE_DURATION}ms ease-in-out ${WIPE_DELAY}ms both` }}
+              stampDelay={wipeDelay + WIPE_DURATION}
+              className="aspect-[4/3] w-full"
+              style={{ animation: `wipe ${WIPE_DURATION}ms ease-in-out ${wipeDelay}ms both` }}
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={result.imageUrl}
               alt="What the AI drew"
-              className="size-72 lg:size-80 object-cover rounded-card shadow-lg bg-white"
-              style={{
-                animation: `wipe ${WIPE_DURATION}ms ease-in-out ${WIPE_DELAY}ms both`,
-              }}
+              className="aspect-[4/3] w-full rounded-inner bg-raised object-cover"
+              style={{ animation: `wipe ${WIPE_DURATION}ms ease-in-out ${wipeDelay}ms both` }}
             />
           )}
-          {/* The animation goes on the outer tag and opacity-60 on the inner one,
-              because the animation's ending opacity (1) would override opacity-60. */}
-          <figcaption style={{ animation: `rise 0.5s ease-out ${WIPE_DELAY}ms both` }}>
-            <span className="text-lg uppercase tracking-widest opacity-60">What the AI drew</span>
-          </figcaption>
-        </figure>
-      </div>
-
-      {/* Bottom row: score on the left, caption + right/wrong on the right
-          (stacked on narrow screens). Side by side keeps everything on one screen. */}
-      <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10">
-        {/* The score. Fades in, then counts up from 0. */}
-        <div
-          className="flex flex-col items-center"
-          style={{ animation: `rise 0.5s ease-out ${SCORE_DELAY}ms both` }}
-        >
-          <p className={`text-8xl font-black tabular-nums ${scoreColor(result.score)}`}>
-            {shownScore}%
-          </p>
-          <p className="text-lg uppercase tracking-widest opacity-60">match</p>
-        </div>
-
-        <div className="flex flex-col items-center md:items-start gap-3 max-w-xl">
-          {/* The roast caption. Lands with the same bounce as players joining (pop). */}
-          <p
-            className="text-3xl font-black text-center md:text-left"
-            style={{ animation: `pop 0.4s ease-out ${CAPTION_DELAY}ms both` }}
-          >
-            {result.caption}
-          </p>
-
-          {/* What the AI got right (blue ✓) and wrong (pink ✗).
-              Each chip waits a little longer than the one before it (the "stagger"). */}
-          <div className="flex flex-wrap justify-center md:justify-start gap-2">
-            {chips.map((chip, i) => (
-              <span
-                key={`${chip.good}-${chip.text}`}
-                className={`font-bold px-3 py-1 rounded-full ${
-                  chip.good ? "bg-cool/15 text-cool" : "bg-pop/10 text-pop"
-                }`}
-                style={{
-                  animation: `pop 0.3s ease-out ${CHIPS_DELAY + i * CHIP_STAGGER}ms both`,
-                }}
-              >
-                {chip.good ? "✓" : "✗"} {chip.text}
-              </span>
-            ))}
+          <div className="flex items-center gap-3" style={anim("rise", scoreDelay)}>
+            <span className={`font-display text-[56px] leading-none tabular-nums ${result.score >= 40 ? "text-point" : "text-ai"}`}>
+              {shownScore}%
+            </span>
+            <span className="text-sm leading-snug text-muted">
+              AI image match
+              <br />
+              {breakdown ? `= ${breakdown.accuracy} accuracy points` : "How close the AI got"}
+            </span>
           </div>
-        </div>
+        </Panel>
       </div>
-    </main>
+
+      {/* The describer's points adding up, then the roast */}
+      <div className="flex min-h-[96px] items-center gap-8 rounded-panel border border-line bg-raised px-[22px] py-3.5">
+        {breakdown && (
+          <div className="flex shrink-0 items-end gap-6">
+            {lines.map((line, i) => (
+              <div key={line.label} className="flex flex-col gap-1" style={anim("rise", pointsDelay + i * LINE_STAGGER)}>
+                <Label tone={line.value < 0 ? "ai" : "line"}>{line.label}</Label>
+                <Delta value={line.value} className="text-[28px] font-extrabold leading-none" />
+              </div>
+            ))}
+            {breakdown.multiplier > 1 && (
+              <div className="flex flex-col gap-1" style={anim("rise", pointsDelay + lines.length * LINE_STAGGER)}>
+                <Label tone="point">Round 2</Label>
+                <span className="text-[28px] font-extrabold leading-none text-point">x{breakdown.multiplier}</span>
+              </div>
+            )}
+            <div className="flex flex-col gap-1 border-l-2 border-line pl-6" style={anim("pop", totalDelay, 0.35)}>
+              <Label tone="point">{playerName}&apos;s turn</Label>
+              <span className="font-display text-[44px] leading-none tabular-nums text-point">
+                {breakdown.total.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        )}
+        <p className="font-display text-[30px] leading-[1.1]" style={anim("pop", totalDelay + 500, 0.4)}>
+          {result.caption}
+        </p>
+      </div>
+    </div>
   );
 }

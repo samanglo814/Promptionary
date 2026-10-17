@@ -5,11 +5,17 @@
 import { useState } from "react";
 import { type SubmitResult, type Target } from "@/lib/mocks";
 import { submitAudio, submitText } from "@/lib/submit";
-import { useSecondsLeft } from "@/lib/useSecondsLeft";
+import { useMsLeft, useSecondsLeft } from "@/lib/useSecondsLeft";
+import { Button, Label, Meter, TextButton } from "@/components/ui";
 import MicRecorder from "./MicRecorder";
+
+// How long a turn is (server config describeMs), for the speed bonus meter.
+const DESCRIBE_MS = 20_000;
+const SPEED_POINTS = 100;
 
 // What the parent (PlayerJoin) passes in.
 type Props = {
+  myName: string;
   target: Target; // the secret image + banned words for this round
   roomCode: string; // sent along with the description so the server knows which room
   playerId: string; // ...and which player
@@ -37,10 +43,13 @@ function bannedWordsIn(text: string, banned: string[]) {
 // The phone screen for the player whose turn it is.
 // Shows the secret image and banned words, takes their description (voice or typed),
 // and sends it to /submit.
-export default function DescribeScreen({ target, roomCode, playerId, endsAt, onSubmitted }: Props) {
+export default function DescribeScreen({ myName, target, roomCode, playerId, endsAt, onSubmitted }: Props) {
   // Seconds left in the turn. The round clock starts when the turn starts, not when the
   // player taps the mic, so the recording must stop by then too. null with mocks.
   const turnSecondsLeft = useSecondsLeft(endsAt);
+  // The speed bonus drains with the clock: finish early, keep more of it.
+  const msLeft = useMsLeft(endsAt);
+  const speedBonus = msLeft === null ? SPEED_POINTS : Math.round((SPEED_POINTS * msLeft) / DESCRIBE_MS);
   const [mode, setMode] = useState<Mode>("voice");
   // What they've typed so far (typing mode only).
   const [text, setText] = useState("");
@@ -71,29 +80,37 @@ export default function DescribeScreen({ target, roomCode, playerId, endsAt, onS
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center gap-5 p-6 text-center">
-      <p className="text-sm uppercase tracking-widest opacity-60">Your turn! Describe this:</p>
+    <>
+      <div className="flex items-center justify-between">
+        <Label tone="action">{myName} · Describer</Label>
+        {turnSecondsLeft !== null && (
+          <span className={`font-display text-[34px] leading-none tabular-nums ${turnSecondsLeft <= 5 ? "text-ai" : "text-point"}`}>
+            {turnSecondsLeft}s
+          </span>
+        )}
+      </div>
+      <h1 className="font-display text-[40px] leading-[1.04]">Describe this. Out loud.</h1>
 
       {/* The secret image. Only this phone sees it.
-          Plain <img> instead of next/image because the images come from other
-          websites, and next/image would need each site listed in next.config.ts. */}
+          Plain <img> instead of next/image because the images come from the game server,
+          and next/image would need each address listed in next.config.ts. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={target.imageUrl}
         alt="Your secret image"
-        className="w-full max-w-xs aspect-square object-cover rounded-card shadow-lg"
+        className="aspect-[4/3] w-full rounded-inner border-2 border-action bg-raised object-cover"
       />
 
       {/* Banned words. Saying one gets you buzzed (the server checks the transcript).
           In typing mode, a word you've typed turns solid pink as a warning. */}
-      <div className="flex flex-col items-center gap-2">
-        <p className="text-sm uppercase tracking-widest opacity-60">Don&apos;t say</p>
-        <div className="flex flex-wrap justify-center gap-2">
+      <div className="flex flex-col gap-2">
+        <Label tone="ai">Don&apos;t say · −100 each</Label>
+        <div className="flex flex-wrap gap-2">
           {target.bannedWords.map((word) => (
             <span
               key={word}
-              className={`font-bold px-3 py-1 rounded-full line-through ${
-                typedBanned.includes(word) ? "bg-pop text-white" : "bg-pop/10 text-pop"
+              className={`rounded-full border px-3 py-1 text-sm font-bold line-through ${
+                typedBanned.includes(word) ? "border-ai bg-ai text-stage" : "border-ai/60 bg-raised text-ai"
               }`}
             >
               {word}
@@ -102,24 +119,34 @@ export default function DescribeScreen({ target, roomCode, playerId, endsAt, onS
         </div>
       </div>
 
+      {!sending && (
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between text-xs">
+            <span className="font-bold text-muted">Speed bonus if you finish now</span>
+            <span className="font-extrabold text-point">+{speedBonus}</span>
+          </div>
+          <Meter value={speedBonus / SPEED_POINTS} />
+        </div>
+      )}
+
       {sending ? (
-        // While /submit is working. Later this can be a funnier "AI is drawing…" state.
-        <p className="text-2xl font-black animate-pulse mt-4">Sending to the AI…</p>
+        // While /submit is working.
+        <p className="mt-4 text-center font-display text-3xl animate-pulse">Sending to the AI…</p>
       ) : mode === "voice" ? (
         // ---------- Voice (default) ----------
         <>
-          {/* The 20-second timer lives inside MicRecorder: it counts down while recording
+          {/* The timer lives inside MicRecorder: it counts down while recording
               and stops on its own at 0. `key` lets us reset it after an error. */}
-          <MicRecorder
-            key={attempt}
-            maxSeconds={turnSecondsLeft === null ? undefined : Math.max(1, turnSecondsLeft)}
-            onRecorded={(audio) => sendDescription(() => submitAudio(audio, roomCode, playerId))}
-          />
+          <div className="mt-1">
+            <MicRecorder
+              key={attempt}
+              maxSeconds={turnSecondsLeft === null ? undefined : Math.max(1, turnSecondsLeft)}
+              onRecorded={(audio) => sendDescription(() => submitAudio(audio, roomCode, playerId))}
+            />
+          </div>
 
           {/* The escape hatch: always visible, so a broken mic never blocks the round */}
-          <button onClick={() => setMode("type")} className="underline opacity-60">
-            Mic not working? Type it instead
-          </button>
+          <TextButton onClick={() => setMode("type")}>Mic not working? Type it instead</TextButton>
         </>
       ) : (
         // ---------- Typing (fallback) ----------
@@ -130,60 +157,56 @@ export default function DescribeScreen({ target, roomCode, playerId, endsAt, onS
             const description = text.trim();
             if (description) sendDescription(() => submitText(description, roomCode, playerId));
           }}
-          className="w-full max-w-xs flex flex-col gap-3"
+          className="flex flex-col gap-3"
         >
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            maxLength={MAX_CHARS}
-            rows={3}
-            autoFocus // keyboard pops up right away when switching to typing
-            placeholder="Describe it without the banned words…"
-            className="w-full text-lg border-2 border-ink/10 rounded-card p-3 outline-none focus:border-pop resize-none"
-          />
+          <label className="flex flex-col gap-2 rounded-panel border-[1.5px] border-action bg-panel p-4 focus-within:border-action-edge">
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              maxLength={MAX_CHARS}
+              rows={3}
+              autoFocus // keyboard pops up right away when switching to typing
+              placeholder="Describe it without the banned words…"
+              className="resize-none bg-transparent text-lg text-text outline-none placeholder:text-dim"
+            />
+            {/* Banned-word warning (left) and characters left (right) */}
+            <div className="flex justify-between text-xs">
+              <span className="font-bold text-ai">
+                {typedBanned.length > 0 && `“${typedBanned[0]}” will get you buzzed`}
+              </span>
+              <span className="tabular-nums text-muted">{MAX_CHARS - text.length}</span>
+            </div>
+          </label>
 
-          {/* Banned-word warning (left) and characters left (right) */}
-          <div className="flex justify-between text-sm">
-            <span className="text-pop font-bold">
-              {typedBanned.length > 0 && `⚠️ “${typedBanned[0]}” will get you buzzed`}
-            </span>
-            <span className="opacity-60 tabular-nums">{MAX_CHARS - text.length}</span>
-          </div>
-
-          <button
-            type="submit"
-            disabled={!text.trim()}
-            className="bg-pop text-white text-2xl font-bold py-4 rounded-card disabled:opacity-40"
-          >
-            Send
-          </button>
+          <Button type="submit" disabled={!text.trim()}>
+            Done. Send it →
+          </Button>
 
           {/* type="button" so this doesn't submit the form */}
-          <button type="button" onClick={() => setMode("voice")} className="underline opacity-60">
+          <TextButton type="button" onClick={() => setMode("voice")}>
             Use the mic instead
-          </button>
+          </TextButton>
         </form>
       )}
 
       {/* Shown if sending failed, in either mode */}
       {error && !sending && (
         <div className="flex flex-col items-center gap-2">
-          <p className="text-pop font-bold">{error}</p>
+          <p className="font-bold text-ai">{error}</p>
           {/* In voice mode, reset the recorder so they can record again.
               In typing mode their text is still there; they just tap Send again. */}
           {mode === "voice" && (
-            <button
+            <TextButton
               onClick={() => {
                 setError("");
                 setAttempt((n) => n + 1); // fresh MicRecorder
               }}
-              className="underline font-bold"
             >
               Record again
-            </button>
+            </TextButton>
           )}
         </div>
       )}
-    </main>
+    </>
   );
 }
