@@ -3,7 +3,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { type Player } from "@/lib/mocks";
+import { type Player, type SubmitResult } from "@/lib/mocks";
+import { submitAudio } from "@/lib/submit";
+import MicRecorder from "./MicRecorder";
 
 // Read ?code= in the browser (window doesn't exist on the server, so it's "" there).
 const codeFromUrl = () =>
@@ -19,13 +21,17 @@ export default function PlayerJoin() {
   const [name, setName] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
 
+  // Once joined, we have a player and show the waiting screen.
+  const [me, setMe] = useState<Player | null>(null);
+
+  // TEMP mic test: hooks have to go above the `if (me)` early return, or React complains.
+  const [audioUrl, setAudioUrl] = useState(""); // lets you hear your recording
+  const [result, setResult] = useState<SubmitResult | null>(null); // what /submit sent back
+
   // Came from the QR code? Jump straight to the name field.
   useEffect(() => {
     if (urlCode) nameRef.current?.focus();
   }, [urlCode]);
-
-  // Once joined, we have a player and show the waiting screen.
-  const [me, setMe] = useState<Player | null>(null);
 
   const canJoin = code.trim().length === 4 && name.trim().length > 0;
 
@@ -48,6 +54,24 @@ export default function PlayerJoin() {
         </div>
         <h1 className="text-3xl font-black">You&apos;re in!</h1>
         <p className="text-lg opacity-60 animate-pulse">Waiting for the host to start…</p>
+
+        {/* TEMP mic test: moves to the describe screen later (#15) */}
+        <MicRecorder
+          onRecorded={async (audio) => {
+            // Turn the recording into a temporary URL so an <audio> tag can play it.
+            setAudioUrl(URL.createObjectURL(audio));
+            // Send it (or get mock data back) and keep the result to show on screen.
+            setResult(await submitAudio(audio, code, me.id));
+          }}
+        />
+        {/* Playback so you can check the recording actually captured your voice */}
+        {audioUrl && <audio src={audioUrl} controls />}
+        {/* Shows the transcript and caption once /submit answers (mock for now) */}
+        {result && (
+          <p className="opacity-60">
+            “{result.transcript}” → {result.caption}
+          </p>
+        )}
       </main>
     );
   }
