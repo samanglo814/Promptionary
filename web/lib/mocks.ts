@@ -7,6 +7,9 @@
 // A person in the room.
 export type Player = { id: string; name: string; score: number };
 
+// A player on the scoreboard: their total plus what they earned in the round that just ended.
+export type Standing = Player & { lastRound: number };
+
 // The secret image a player has to describe, and the words they can't say.
 // The server picks one per round from the image bank (server/data/targets.json).
 export type Target = {
@@ -33,6 +36,16 @@ export const mockPlayers: Player[] = [
   { id: "1", name: "Sam", score: 0 },
   { id: "2", name: "Jordan", score: 0 },
   { id: "3", name: "Priya", score: 0 },
+];
+
+// Scores partway through a game. Deliberately NOT in order, because the
+// scoreboard has to sort them itself (the server may send them in any order).
+export const mockStandings: Standing[] = [
+  { id: "1", name: "Sam", score: 142, lastRound: 42 },
+  { id: "2", name: "Gabriel", score: 188, lastRound: 71 },
+  { id: "3", name: "Chadrick", score: 97, lastRound: 12 },
+  { id: "4", name: "Charisse", score: 163, lastRound: 0 },
+  { id: "5", name: "Abigail", score: 120, lastRound: 55 },
 ];
 
 export const mockTarget: Target = {

@@ -7,8 +7,15 @@
 // useSyncExternalStore = read something from outside React (here: the site's address) safely
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { mockRoomCode, mockPlayers, mockResult, type Player } from "@/lib/mocks";
+import {
+  mockRoomCode,
+  mockPlayers,
+  mockResult,
+  mockStandings,
+  type Player,
+} from "@/lib/mocks";
 import RevealScreen from "./RevealScreen";
+import Scoreboard from "./Scoreboard";
 
 // The link the QR code points to. window only exists in the browser,
 // so on the server useSyncExternalStore uses "" instead (and no QR is drawn yet).
@@ -17,8 +24,12 @@ const joinUrlFromWindow = () => `${window.location.origin}/play?code=${mockRoomC
 const noSubscribe = () => () => {};
 
 // Which screen the big screen is showing.
-// Later the server decides this with socket events (e.g. "round_result").
-type Phase = "lobby" | "reveal";
+// Later the server decides this with socket events (e.g. "round_result", "game_over").
+//   lobby      = room code, QR, players joining
+//   reveal     = one round's result
+//   scoreboard = ranked list between rounds
+//   podium     = final results at the end of the game
+type Phase = "lobby" | "reveal" | "scoreboard" | "podium";
 
 export default function HostPage() {
   // Players currently in the room. Starts empty, fills in over time.
@@ -27,9 +38,15 @@ export default function HostPage() {
   const joinUrl = useSyncExternalStore(noSubscribe, joinUrlFromWindow, () => "");
 
   const [phase, setPhase] = useState<Phase>("lobby");
-  // Bumped every time a reveal starts. Used as RevealScreen's `key`, so React builds
-  // a fresh one and the animation plays from the start again.
-  const [revealCount, setRevealCount] = useState(0);
+  // Bumped every time a screen (re)starts. Used as the screen's `key`, so React builds
+  // a fresh one and its animation plays from the start again.
+  const [playCount, setPlayCount] = useState(0);
+
+  // Switch screens and restart the new screen's animation.
+  function show(next: Phase) {
+    setPlayCount((n) => n + 1);
+    setPhase(next);
+  }
 
   useEffect(() => {
     // FAKE: add one mock player every 1.5 seconds so you can
@@ -44,18 +61,36 @@ export default function HostPage() {
     return () => clearInterval(timer); // cleanup if the page closes
   }, []);
 
-  // ---------- Reveal screen ----------
-  if (phase === "reveal") {
+  // ---------- Game screens (everything except the lobby) ----------
+  if (phase !== "lobby") {
     return (
       <>
-        {/* FAKE: the server will send the real result + player with a "round_result" event */}
-        <RevealScreen key={revealCount} playerName="Sam" result={mockResult} />
+        {/* FAKE: the server will send the real data with socket events */}
+        {phase === "reveal" && (
+          <RevealScreen key={playCount} playerName="Sam" result={mockResult} />
+        )}
+        {phase === "scoreboard" && (
+          <Scoreboard key={playCount} standings={mockStandings} final={false} />
+        )}
+        {phase === "podium" && (
+          <Scoreboard key={playCount} standings={mockStandings} final={true} />
+        )}
 
         {/* TEMP test controls, pinned to the bottom corner so they stay out of the way */}
         <div className="fixed bottom-4 right-4 flex gap-3 text-sm opacity-60">
-          <button onClick={() => setRevealCount((n) => n + 1)} className="underline">
-            Replay reveal (test)
+          <button onClick={() => show(phase)} className="underline">
+            Replay (test)
           </button>
+          {phase === "reveal" && (
+            <button onClick={() => show("scoreboard")} className="underline">
+              Scoreboard (test)
+            </button>
+          )}
+          {phase === "scoreboard" && (
+            <button onClick={() => show("podium")} className="underline">
+              Podium (test)
+            </button>
+          )}
           <button onClick={() => setPhase("lobby")} className="underline">
             Back to lobby (test)
           </button>
@@ -103,16 +138,18 @@ export default function HostPage() {
         Start game
       </button>
 
-      {/* TEMP: jump straight to a reveal with mock data so you can test the animation */}
-      <button
-        onClick={() => {
-          setRevealCount((n) => n + 1);
-          setPhase("reveal");
-        }}
-        className="text-sm underline opacity-60"
-      >
-        Test reveal
-      </button>
+      {/* TEMP: jump straight to any screen with mock data so you can test it */}
+      <div className="flex gap-4 text-sm opacity-60">
+        <button onClick={() => show("reveal")} className="underline">
+          Test reveal
+        </button>
+        <button onClick={() => show("scoreboard")} className="underline">
+          Test scoreboard
+        </button>
+        <button onClick={() => show("podium")} className="underline">
+          Test podium
+        </button>
+      </div>
     </main>
   );
 }
