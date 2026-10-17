@@ -62,7 +62,7 @@ export default function GuessScreen({ myName, describerName, guessEndsAt, locked
         </div>
         <Meter value={(locked.speed - 70) / 30} />
         <p className="text-sm leading-relaxed text-muted">
-          Your points = how close your guess is × {locked.speed}%. Everyone finds out together on the big screen.
+          Everyone finds out how close they got on the big screen.
         </p>
       </>
     );
@@ -128,7 +128,7 @@ export default function GuessScreen({ myName, describerName, guessEndsAt, locked
           </div>
           <Meter value={(speedNow - 70) / 30} />
         </div>
-        <p className="text-sm leading-relaxed text-muted">Accuracy × speed. Being fast only helps if your guess is close.</p>
+        <p className="text-sm leading-relaxed text-muted">The sooner you lock in, the more it&apos;s worth.</p>
 
         <Button type="submit" disabled={!canSend}>
           {sending ? "Locking in…" : "Lock it in 🔒"}
