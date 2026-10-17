@@ -71,6 +71,14 @@ export function geminiClient(apiKeys: string): Generate {
   return withKeyRotation(clients);
 }
 
+// Gemini through Google Cloud's Vertex AI instead of an AI Studio key: billed to the project's
+// Cloud billing account (where free-trial credits apply), with no free-tier daily cap.
+// Signs in with Application Default Credentials: run `gcloud auth application-default login` once.
+export function vertexClient(project: string, location: string): Generate {
+  const client = new GoogleGenAI({ vertexai: true, project, location });
+  return (params) => client.models.generateContent(params);
+}
+
 // Calls the current key; on "out of quota" (429) moves to the next key and tries again,
 // until every key has been tried once. Later calls start from the key that last worked.
 export function withKeyRotation(clients: Generate[]): Generate {

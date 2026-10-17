@@ -1,15 +1,17 @@
 import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { createGeminiAi, geminiClient } from "../src/ai/gemini.js";
+import { createGeminiAi, geminiClient, vertexClient } from "../src/ai/gemini.js";
 import { ImageStore } from "../src/ai/images.js";
 import { drawWithPollinations } from "../src/ai/pollinations.js";
 import { loadTargets } from "../src/targets.js";
 
 // Live smoke test of the Gemini pipeline: npm run live:gemini [-- out-dir]
-// Needs GEMINI_API_KEY and the target images (npm run generate:images). Runs a few text rounds
-// and a silent one, and saves what Gemini drew.
+// Needs GEMINI_API_KEY or VERTEX_PROJECT, and the target images (npm run generate:images).
+// Runs a few text rounds and a silent one, and saves what Gemini drew.
 const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) throw new Error("Set GEMINI_API_KEY");
+const vertexProject = process.env.VERTEX_PROJECT;
+if (!apiKey && !vertexProject) throw new Error("Set GEMINI_API_KEY or VERTEX_PROJECT");
+console.log(vertexProject ? `Using Vertex AI, project ${vertexProject}` : "Using the AI Studio key");
 const outDir = process.argv[2] ?? "live-output";
 mkdirSync(outDir, { recursive: true });
 
@@ -17,7 +19,7 @@ const targets = loadTargets("http://localhost");
 const target = (id: string) => targets.find((t) => t.id === id)!;
 const images = new ImageStore("http://localhost");
 const ai = createGeminiAi({
-  generate: geminiClient(apiKey),
+  generate: vertexProject ? vertexClient(vertexProject, process.env.VERTEX_LOCATION || "global") : geminiClient(apiKey!),
   textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
   imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
   drawImage: process.env.IMAGE_PROVIDER === "pollinations"
