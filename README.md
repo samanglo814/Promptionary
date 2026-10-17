@@ -176,6 +176,18 @@ cd web && npm run dev
 
 Open the host screen at `http://localhost:3000/host`, then join from a phone on the same network at `http://<your-local-ip>:3000/play`.
 
+To test with phones (the mic needs https), run `./dev-tunnel.sh` from the repo root instead.
+
+### Deploy
+
+The game runs on one [Vultr](https://www.vultr.com) server, with HTTPS from Caddy. On a fresh Ubuntu server, as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/samanglo814/Reverse-Charades/main/deploy/vultr-setup.sh | bash
+```
+
+Full steps, AI keys, and updating: [`docs/deploy-vultr.md`](docs/deploy-vultr.md).
+
 ### Generate the image bank
 
 ```bash
@@ -217,7 +229,7 @@ Set `DEMO_MODE=true` to replay cached results with no live API calls. This is us
 - **Entertainment & Creative Technology (Swamp Studios):** a game, interactive media, digital art, and storytelling in one.
 - **Best Use of Gemini API:** audio in, images out, structured scoring, and long-context storytelling, all from one API.
 - **Best Use of Tiger Data:** every round is logged as time-series data, powering the live Hall of Shame.
-- **Best Use of Vultr:** the realtime server is deployed on Vultr.
+- **Best Use of Vultr:** the whole game (website, realtime server, HTTPS) runs on one Vultr server, set up by a single script ([`deploy/vultr-setup.sh`](deploy/vultr-setup.sh)).
 - **Best Use of Auth0:** optional sign-in to save your gallery.
 - **Best Domain Name from GoDaddy Registry:** [your-domain.example]
 - **DEV Writing Challenge:** [link to post]
