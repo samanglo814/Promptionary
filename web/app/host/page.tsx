@@ -12,10 +12,12 @@ import {
   mockPlayers,
   mockResult,
   mockStandings,
+  mockHallOfShame,
   type Player,
 } from "@/lib/mocks";
 import RevealScreen from "./RevealScreen";
 import Scoreboard from "./Scoreboard";
+import HallOfShame from "./HallOfShame";
 
 // The link the QR code points to. window only exists in the browser,
 // so on the server useSyncExternalStore uses "" instead (and no QR is drawn yet).
@@ -29,7 +31,8 @@ const noSubscribe = () => () => {};
 //   reveal     = one round's result
 //   scoreboard = ranked list between rounds
 //   podium     = final results at the end of the game
-type Phase = "lobby" | "reveal" | "scoreboard" | "podium";
+//   shame      = Hall of Shame: the night's worst moments
+type Phase = "lobby" | "reveal" | "scoreboard" | "podium" | "shame";
 
 export default function HostPage() {
   // Players currently in the room. Starts empty, fills in over time.
@@ -75,6 +78,7 @@ export default function HostPage() {
         {phase === "podium" && (
           <Scoreboard key={playCount} standings={mockStandings} final={true} />
         )}
+        {phase === "shame" && <HallOfShame key={playCount} data={mockHallOfShame} />}
 
         {/* TEMP test controls, pinned to the bottom corner so they stay out of the way */}
         <div className="fixed bottom-4 right-4 flex gap-3 text-sm opacity-60">
@@ -89,6 +93,11 @@ export default function HostPage() {
           {phase === "scoreboard" && (
             <button onClick={() => show("podium")} className="underline">
               Podium (test)
+            </button>
+          )}
+          {phase === "podium" && (
+            <button onClick={() => show("shame")} className="underline">
+              Hall of Shame (test)
             </button>
           )}
           <button onClick={() => setPhase("lobby")} className="underline">
@@ -148,6 +157,9 @@ export default function HostPage() {
         </button>
         <button onClick={() => show("podium")} className="underline">
           Test podium
+        </button>
+        <button onClick={() => show("shame")} className="underline">
+          Test hall of shame
         </button>
       </div>
     </main>

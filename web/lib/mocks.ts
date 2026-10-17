@@ -30,6 +30,27 @@ export type SubmitResult = {
   refused?: boolean; // true if the image generator refused to draw it
 };
 
+// The night's worst moments, for the Hall of Shame screen.
+// The server builds this from the rounds logged in Tiger Data (#23).
+export type HallOfShame = {
+  // Headline numbers for the big stat cards.
+  stats: {
+    roundsPlayed: number;
+    avgScore: number; // average match % across every round tonight
+    bannedBuzzes: number; // how many times someone said a banned word
+    refusals: number; // how many times the AI refused to draw
+  };
+  // The lowest-scoring rounds of the night, worst first.
+  worstMisses: {
+    playerName: string;
+    transcript: string;
+    imageUrl: string; // what the AI drew
+    score: number;
+  }[];
+  // Words that showed up in the worst-scoring descriptions, worst first.
+  worstWords: { word: string; avgScore: number }[];
+};
+
 export const mockRoomCode = "FROG";
 
 export const mockPlayers: Player[] = [
@@ -62,4 +83,35 @@ export const mockResult: SubmitResult = {
   gotRight: ["skateboard"],
   gotWrong: ["it's a dog, not a cat"],
   caption: "Bold of you to call that a cat.",
+};
+
+export const mockHallOfShame: HallOfShame = {
+  stats: { roundsPlayed: 15, avgScore: 38, bannedBuzzes: 7, refusals: 2 },
+  worstMisses: [
+    {
+      playerName: "Chadrick",
+      transcript: "it's like a horse but sadder and it lives in a box",
+      imageUrl: "https://placehold.co/256x256?text=Sad+box+horse",
+      score: 3,
+    },
+    {
+      playerName: "Abigail",
+      transcript: "the thing you put soup in but it's a hat",
+      imageUrl: "https://placehold.co/256x256?text=Soup+hat",
+      score: 8,
+    },
+    {
+      playerName: "Sam",
+      transcript: "a cat... no wait, a fluffy thing on a skateboard",
+      imageUrl: "https://placehold.co/256x256?text=AI+drew",
+      score: 12,
+    },
+  ],
+  worstWords: [
+    { word: "basically", avgScore: 9 },
+    { word: "vibes", avgScore: 14 },
+    { word: "kinda", avgScore: 17 },
+    { word: "thingy", avgScore: 21 },
+    { word: "sadder", avgScore: 23 },
+  ],
 };
