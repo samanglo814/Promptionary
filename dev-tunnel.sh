@@ -54,7 +54,8 @@ web_url=$(tunnel 3000)
 
 # npm start, not npm run dev: the dev server restarts on every file save, which ends every game in progress.
 (cd server && PUBLIC_URL="$server_url" CLIENT_ORIGIN="http://localhost:3000,$web_url" npm start) &
-(cd web && NEXT_PUBLIC_SERVER_URL="$server_url" npm run dev) &
+# APP_BASE_URL: the address Auth0 sends hosts back to after signing in (when Auth0 is set up).
+(cd web && NEXT_PUBLIC_SERVER_URL="$server_url" APP_BASE_URL="$web_url" npm run dev) &
 
 # Waits until an address answers through its tunnel (new tunnels take a little while).
 wait_for() {

@@ -232,7 +232,7 @@ Set `DEMO_MODE=true` to replay cached results with no live API calls. This is us
 - **Best Use of Gemini API:** audio in, images out, structured scoring, and long-context storytelling, all from one API.
 - **Best Use of Tiger Data:** every round is logged as time-series data, powering the live Hall of Shame.
 - **Best Use of Vultr:** the whole game (website, realtime server, HTTPS) runs on one Vultr server, set up by a single script ([`deploy/vultr-setup.sh`](deploy/vultr-setup.sh)).
-- **Best Use of Auth0:** optional sign-in to save your gallery.
+- **Best Use of Auth0:** hosts sign in with Auth0 (Universal Login) before starting a game, and the big screen shows who's hosting. Players still join with just a name. Set up in [`web/.env.example`](web/.env.example).
 - **Best Domain Name from GoDaddy Registry:** [your-domain.example]
 - **DEV Writing Challenge:** [link to post]
 
