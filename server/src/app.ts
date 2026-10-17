@@ -6,6 +6,7 @@ import { Server, type Socket } from "socket.io";
 import type { Ai } from "./ai/index.js";
 import { createFakeAi } from "./ai/fake.js";
 import { defaultConfig, type GameConfig } from "./config.js";
+import { submitRouter, uploadErrors } from "./http/submit.js";
 import { RoomStore } from "./rooms/RoomStore.js";
 import { registerSockets } from "./sockets.js";
 import { loadTargets } from "./targets.js";
@@ -56,6 +57,8 @@ export function createGameServer(options: ServerOptions): GameServer {
     targets: loadTargets(),
   });
   registerSockets(io, rooms);
+  app.use(submitRouter(rooms, config));
+  app.use(uploadErrors);
 
   return {
     httpServer,
