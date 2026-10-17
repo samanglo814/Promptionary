@@ -2,21 +2,36 @@
 // Needed because we use state, timers, and window.
 "use client";
 
-import { useEffect, useState } from "react";
+// useState             = values that re-draw the screen when they change
+// useEffect            = run code after the screen draws (we start the fake timer here)
+// useSyncExternalStore = read something from outside React (here: the site's address) safely
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { mockRoomCode, mockPlayers, type Player } from "@/lib/mocks";
+import { mockRoomCode, mockPlayers, mockResult, type Player } from "@/lib/mocks";
+import RevealScreen from "./RevealScreen";
 
-export default function HostLobby() {
+// The link the QR code points to. window only exists in the browser,
+// so on the server useSyncExternalStore uses "" instead (and no QR is drawn yet).
+const joinUrlFromWindow = () => `${window.location.origin}/play?code=${mockRoomCode}`;
+// The address never changes while the page is open, so there's nothing to subscribe to.
+const noSubscribe = () => () => {};
+
+// Which screen the big screen is showing.
+// Later the server decides this with socket events (e.g. "round_result").
+type Phase = "lobby" | "reveal";
+
+export default function HostPage() {
   // Players currently in the room. Starts empty, fills in over time.
   const [players, setPlayers] = useState<Player[]>([]);
 
-  // The link the QR code points to. Built in the browser
-  // because window doesn't exist on the server.
-  const [joinUrl, setJoinUrl] = useState("");
+  const joinUrl = useSyncExternalStore(noSubscribe, joinUrlFromWindow, () => "");
+
+  const [phase, setPhase] = useState<Phase>("lobby");
+  // Bumped every time a reveal starts. Used as RevealScreen's `key`, so React builds
+  // a fresh one and the animation plays from the start again.
+  const [revealCount, setRevealCount] = useState(0);
 
   useEffect(() => {
-    setJoinUrl(`${window.location.origin}/play?code=${mockRoomCode}`);
-
     // FAKE: add one mock player every 1.5 seconds so you can
     // see the list animate. Replace with a real socket event later.
     let i = 0;
@@ -29,6 +44,27 @@ export default function HostLobby() {
     return () => clearInterval(timer); // cleanup if the page closes
   }, []);
 
+  // ---------- Reveal screen ----------
+  if (phase === "reveal") {
+    return (
+      <>
+        {/* FAKE: the server will send the real result + player with a "round_result" event */}
+        <RevealScreen key={revealCount} playerName="Sam" result={mockResult} />
+
+        {/* TEMP test controls, pinned to the bottom corner so they stay out of the way */}
+        <div className="fixed bottom-4 right-4 flex gap-3 text-sm opacity-60">
+          <button onClick={() => setRevealCount((n) => n + 1)} className="underline">
+            Replay reveal (test)
+          </button>
+          <button onClick={() => setPhase("lobby")} className="underline">
+            Back to lobby (test)
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // ---------- Lobby screen ----------
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-10 p-8">
       <h1 className="text-6xl font-black tracking-tight">Reverse Charades</h1>
@@ -65,6 +101,17 @@ export default function HostLobby() {
         className="bg-pop text-white text-2xl font-bold px-10 py-4 rounded-card disabled:opacity-40"
       >
         Start game
+      </button>
+
+      {/* TEMP: jump straight to a reveal with mock data so you can test the animation */}
+      <button
+        onClick={() => {
+          setRevealCount((n) => n + 1);
+          setPhase("reveal");
+        }}
+        className="text-sm underline opacity-60"
+      >
+        Test reveal
       </button>
     </main>
   );
