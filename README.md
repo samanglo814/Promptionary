@@ -162,6 +162,8 @@ Open `http://localhost:3000/host` on the main screen. Phones on the same network
 
 Phone browsers only allow microphone access over HTTPS. To test voice on phones, run `./dev-tunnel.sh` from the repository root instead. It starts both apps behind free Cloudflare tunnels and prints a public HTTPS host address, without modifying your `.env` files.
 
+To serve the game at the same address every run, `./dev-tunnel.sh promptionary.design` uses a named Cloudflare tunnel instead: the website at the domain and the game server at `api.promptionary.design`. The one-time Cloudflare setup is in [`docs/custom-domain.md`](docs/custom-domain.md).
+
 ### Utility scripts (in `server/`)
 
 | Command | Purpose |
@@ -218,6 +220,7 @@ Full instructions, including AI key setup and troubleshooting, are in [`docs/dep
 └── docs/
     ├── data-contract.md    socket events, /submit, shared types
     ├── deploy-vultr.md     deployment guide
+    ├── custom-domain.md    named Cloudflare tunnel for promptionary.design
     └── figma-brief.txt     design brief for the scoring UI
 ```
 
