@@ -293,8 +293,8 @@ export function parseGuessScores(json: string, count: number, field = "scores"):
 const drawPrompt = (transcript: string) =>
   styledPrompt(`draw exactly what the player described, nothing more, keeping their mistakes: ${transcript}`);
 
-// Returns undefined when Gemini refuses.
-async function drawImage(generate: Generate, model: string, prompt: string) {
+// Returns undefined when Gemini refuses. Exported so the server can use it as the fallback drawer.
+export async function drawImage(generate: Generate, model: string, prompt: string) {
   const res = await generate({
     model,
     contents: prompt,
