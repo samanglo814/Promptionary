@@ -5,8 +5,8 @@ import { toJpeg } from "./jpeg.js";
 // image model isn't available. Gemini still transcribes, scores, and writes the caption.
 // Turn it on with IMAGE_PROVIDER=pollinations.
 const BASE_URL = "https://image.pollinations.ai/prompt/";
-// It's slower than Gemini: a drawing can take 10–30s.
-const TIMEOUT_MS = 60_000;
+// It's slower than Gemini: a drawing can take 10–30s. Longer than this, and the fallback drawer is faster.
+const TIMEOUT_MS = 30_000;
 // Without a token, requests too close together get a 402 or 429. Wait and try once more.
 const RATE_LIMITED = new Set([402, 429]);
 const RETRY_DELAY_MS = 10_000;
@@ -23,10 +23,12 @@ export type PollinationsOptions = {
   fetchImage?: typeof fetch;
   retryDelayMs?: number;
   recent?: Map<string, string>; // fingerprint → prompt; tests pass their own
+  // Wait and try again when rate limited. Off when another drawer can take over, which is faster.
+  retry?: boolean;
 };
 
 export async function drawWithPollinations(prompt: string, options: PollinationsOptions = {}) {
-  const { token, fetchImage = fetch, retryDelayMs = RETRY_DELAY_MS, recent = recentDrawings } = options;
+  const { token, fetchImage = fetch, retryDelayMs = RETRY_DELAY_MS, recent = recentDrawings, retry = true } = options;
   const url = `${BASE_URL}${encodeURIComponent(prompt)}?width=768&height=768&nologo=true`;
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -43,7 +45,7 @@ export async function drawWithPollinations(prompt: string, options: Pollinations
       if (recent.size > RECENT_LIMIT) recent.delete(recent.keys().next().value!);
       return { data: await toJpeg(data), mimeType: "image/jpeg" };
     }
-    if (attempt >= 2 || !RATE_LIMITED.has(res.status)) throw new Error(`Pollinations returned ${res.status}`);
+    if (!retry || attempt >= 2 || !RATE_LIMITED.has(res.status)) throw new Error(`Pollinations returned ${res.status}`);
     console.warn(`Pollinations returned ${res.status}, retrying in ${retryDelayMs / 1000}s`);
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
