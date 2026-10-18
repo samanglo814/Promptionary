@@ -6,7 +6,7 @@ A multiplayer party game where the fun is the gap between what you said and what
 
 > Built for **[Hackathon Name]** (MLH), Oct 16 to 18, 2026 · Track: **Entertainment & Creative Technology (Swamp Studios)**
 
-🌐 **Play:** [your-domain.example]  
+🌐 **Play:** [promptionary.design](https://promptionary.design)  
 🎬 **Demo video:** [link]  
 📝 **Devpost:** [link]
 
@@ -178,7 +178,7 @@ cd web && npm run dev
 
 Open the host screen at `http://localhost:3000/host`, then join from a phone on the same network at `http://<your-local-ip>:3000/play`.
 
-To test with phones (the mic needs https), run `./dev-tunnel.sh` from the repo root instead.
+To test with phones (the mic needs https), run `./dev-tunnel.sh` from the repo root instead. With your own domain, `./dev-tunnel.sh promptionary.design` serves it at that address every time (setup: [`docs/custom-domain.md`](docs/custom-domain.md)).
 
 ### Deploy
 
@@ -233,7 +233,7 @@ Set `DEMO_MODE=true` to replay cached results with no live API calls. This is us
 - **Best Use of Tiger Data:** every round is logged as time-series data, powering the live Hall of Shame.
 - **Best Use of Vultr:** the whole game (website, realtime server, HTTPS) runs on one Vultr server, set up by a single script ([`deploy/vultr-setup.sh`](deploy/vultr-setup.sh)).
 - **Best Use of Auth0:** optional sign-in to save your gallery.
-- **Best Domain Name from GoDaddy Registry:** [your-domain.example]
+- **Best Domain Name from GoDaddy Registry:** [promptionary.design](https://promptionary.design): "prompt" + "Pictionary", on `.design` because the AI is drawing.
 - **DEV Writing Challenge:** [link to post]
 
 ---

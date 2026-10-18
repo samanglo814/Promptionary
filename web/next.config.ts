@@ -9,7 +9,8 @@ const lanAddresses = Object.values(networkInterfaces())
   .map((net) => net!.address);
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: [...lanAddresses, "*.trycloudflare.com"],
+  // TUNNEL_DOMAIN: your own domain, when dev-tunnel.sh runs with one (e.g. promptionary.design).
+  allowedDevOrigins: [...lanAddresses, "*.trycloudflare.com", ...(process.env.TUNNEL_DOMAIN ? [process.env.TUNNEL_DOMAIN] : [])],
   /* config options here */
   experimental: {
     agentFeedback: true,
