@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createGameServer } from "./app.js";
-import { createGeminiAi, geminiClient, vertexClient } from "./ai/gemini.js";
+import { createGeminiAi, drawImage, geminiClient, vertexClient } from "./ai/gemini.js";
 import { ImageStore } from "./ai/images.js";
 import { drawWithPollinations } from "./ai/pollinations.js";
 
@@ -21,15 +21,19 @@ const generate = vertexProject ? vertexClient(vertexProject, vertexLocation) : a
 const images = new ImageStore(publicUrl);
 const pollinations = (prompt: string) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN });
 const usePollinations = process.env.IMAGE_PROVIDER === "pollinations";
+const imageModel = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
+const geminiDrawer = (prompt: string) => drawImage(generate!, imageModel, prompt);
 const ai = generate
   ? createGeminiAi({
       generate,
       textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
       transcribeModel: process.env.GEMINI_TRANSCRIBE_MODEL || "gemini-flash-lite-latest",
-      imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
+      imageModel,
       drawImage: usePollinations ? pollinations : undefined,
-      // The Gemini image model needs billing; without it, Pollinations draws instead.
-      fallbackDrawImage: usePollinations ? undefined : pollinations,
+      // Whichever one draws, the other takes over when it fails: Pollinations when the Gemini image
+      // model has no billing, and the Gemini image model (on Vertex AI's credits) when Pollinations is
+      // rate limiting.
+      fallbackDrawImage: usePollinations ? geminiDrawer : pollinations,
       images,
     })
   : undefined;
