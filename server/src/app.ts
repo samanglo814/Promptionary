@@ -8,6 +8,7 @@ import { createFakeAi } from "./ai/fake.js";
 import type { ImageStore } from "./ai/images.js";
 import { defaultConfig, type GameConfig } from "./config.js";
 import { submitRouter, uploadErrors } from "./http/submit.js";
+import { StoryStore } from "./story.js";
 import { RoomStore } from "./rooms/RoomStore.js";
 import { registerSockets } from "./sockets.js";
 import { loadTargets, targetImagesDir } from "./targets.js";
@@ -60,15 +61,18 @@ export function createGameServer(options: ServerOptions): GameServer {
     // events it missed, instead of dropping out of the game.
     connectionStateRecovery: { maxDisconnectionDuration: config.hostGraceMs },
   });
+  const stories = new StoryStore(config.storyTtlMs, config.maxStories);
   const rooms = new RoomStore({
     io,
     config,
     ai: options.ai ?? createFakeAi(config.fakeAiDelayMs),
     targets: loadTargets(options.publicUrl ?? "http://localhost:4000"),
+    stories,
   });
   registerSockets(io, rooms);
   app.use("/targets", express.static(targetImagesDir, { maxAge: "1d" }));
   if (options.images) app.use(options.images.router());
+  app.use(stories.router());
   app.use(submitRouter(rooms, config));
   app.use(uploadErrors);
 

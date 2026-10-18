@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 
 // Images Gemini drew, kept in memory and served at GET /images/:id so the big screen can load them.
-// Only the newest `limit` are kept (enough for the Hall of Shame); older ones are dropped.
+// Only the newest `limit` are kept (enough for the Hall of Shame and recent storybooks, at about
+// 100 KB each); older ones are dropped.
 export class ImageStore {
   private images = new Map<string, { data: Buffer; mimeType: string }>();
 
   constructor(
     private publicUrl: string,
-    private limit = 100,
+    private limit = 500,
   ) {}
 
   // Stores an image and returns the absolute URL browsers can load it from.

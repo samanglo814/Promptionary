@@ -22,6 +22,16 @@ export type Sketch =
 // What the AI needs to judge a turn: the secret image and its description from data/targets.json.
 export type JudgeTarget = { id: string; prompt: string; imageUrl: string };
 
+// One turn, as the storyteller needs it for the end-of-game storybook.
+export type StoryTurn = {
+  playerName: string;
+  target: string; // what the secret image shows (its prompt in data/targets.json)
+  transcript: string;
+  caption: string;
+  score: number;
+  refused: boolean;
+};
+
 // The whole AI pipeline, split at the point where the server checks banned words.
 // The fake version (fake.ts) runs without an API key; gemini.ts is the real one.
 export type Ai = {
@@ -35,6 +45,8 @@ export type Ai = {
     image?: { data: Buffer; mimeType: string };
     guesses: string[];
   }) => Promise<{ judgement?: Judgement; guessScores: number[] }>;
+  // Once per game: a title for the storybook and one narration line per turn, in the same order.
+  narrate: (turns: StoryTurn[]) => Promise<{ title: string; lines: string[] }>;
 };
 
 // The AI is out of requests for now (e.g. the free tier's daily limit). Not worth retrying:

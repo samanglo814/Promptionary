@@ -64,6 +64,25 @@ const hallOfShame: Shape = {
   worstMisses: listOf({ playerName: str, transcript: str, imageUrl: str, score: int }),
   worstWords: listOf({ word: str, avgScore: int }),
 };
+const storyPage: Shape = {
+  round: int,
+  playerName: str,
+  targetImageUrl: str,
+  imageUrl: str,
+  transcript: str,
+  score: percent,
+  caption: str,
+  narration: (v) => str(v) && (v as string).length > 0,
+  bestGuess: nullable(obj({ playerName: str, text: str })),
+  refused: optional(bool),
+};
+export const storybook: Shape = {
+  id: str,
+  title: (v) => str(v) && (v as string).length > 0,
+  createdAt: int,
+  winner: nullable(str),
+  pages: listOf(storyPage),
+};
 
 // Payload shape for every server → client event.
 export const eventShapes: Record<string, Shape> = {
@@ -87,6 +106,7 @@ export const eventShapes: Record<string, Shape> = {
   scoreboard: { standings: listOf(standing) },
   game_over: { standings: listOf(standing), awards: listOf(award) },
   hall_of_shame: { data: obj(hallOfShame) },
+  storybook: { story: obj(storybook) },
   error: { message: str },
 };
 

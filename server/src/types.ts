@@ -77,6 +77,29 @@ export type HallOfShame = {
   worstWords: { word: string; avgScore: number }[];
 };
 
+// One page of the storybook: one turn of the game, told as a picture book.
+export type StoryPage = {
+  round: number; // 1-based
+  playerName: string; // who described it
+  targetImageUrl: string; // the secret image
+  imageUrl: string; // what the AI drew; "" when refused
+  transcript: string; // what they said ("" if they never did)
+  score: number; // 0–100 match
+  caption: string; // the reveal's roast line
+  narration: string; // the storyteller's line for this page
+  bestGuess: { playerName: string; text: string } | null; // the closest guess, if anyone got close
+  refused?: boolean;
+};
+
+// The whole game as a shareable picture book. Kept by the server for a few hours after the game.
+export type Storybook = {
+  id: string;
+  title: string;
+  createdAt: number; // epoch ms
+  winner: string | null; // null when the top spot was tied
+  pages: StoryPage[];
+};
+
 export type GuessErrorReason =
   | "not_now" // no guessing open (between turns, or the window closed)
   | "describer" // the describer can't guess their own image
@@ -130,6 +153,7 @@ export type ServerToClientEvents = {
   scoreboard: (p: { standings: Standing[] }) => void;
   game_over: (p: { standings: Standing[]; awards: Award[] }) => void;
   hall_of_shame: (p: { data: HallOfShame }) => void;
+  storybook: (p: { story: Storybook }) => void;
   error: (p: { message: string }) => void;
 };
 

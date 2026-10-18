@@ -17,20 +17,23 @@ import {
   mockRefusedResult,
   mockStandings,
   mockHallOfShame,
+  mockStorybook,
   type Award,
   type GuessResult,
   type HallOfShame as HallOfShameData,
   type Player,
   type PrompterBreakdown,
   type Standing,
+  type Storybook as StorybookData,
   type SubmitResult,
 } from "@/lib/mocks";
-import { SERVER_URL, connect, type GameSocket } from "@/lib/socket";
+import { SERVER_URL, connect, storyUrl, type GameSocket } from "@/lib/socket";
 import { Avatar, Badge, Button, Label, TextButton } from "@/components/ui";
 import HostShell from "./HostShell";
 import RevealScreen from "./RevealScreen";
 import Scoreboard from "./Scoreboard";
 import HallOfShame from "./HallOfShame";
+import Storybook from "./Storybook";
 import { Describing, Processing, RoundIntro, TurnIntro } from "./StageScreens";
 import { playBuzzer, playPop, setMuted } from "@/lib/sounds";
 
@@ -54,7 +57,8 @@ const TOTAL_ROUNDS = 2;
 //   scoreboard  = ranked list between turns
 //   podium      = final results at the end of the game
 //   shame       = Hall of Shame: the night's worst moments
-type Phase = "lobby" | "round" | "turn" | "describing" | "processing" | "reveal" | "scoreboard" | "podium" | "shame";
+//   story       = the storybook: the game as a picture book, ending on a QR code to keep it
+type Phase = "lobby" | "round" | "turn" | "describing" | "processing" | "reveal" | "scoreboard" | "podium" | "shame" | "story";
 
 // Where we are in the game, for the header and the intro screens.
 type Progress = { round: number; totalRounds: number; turn: number; turnsInRound: number; multiplier: number };
@@ -93,6 +97,7 @@ export default function HostPage() {
   const [prevRanks, setPrevRanks] = useState<Record<string, number>>({});
   const [awards, setAwards] = useState<Award[]>(mockAwards);
   const [shame, setShame] = useState<HallOfShameData>(mockHallOfShame);
+  const [story, setStory] = useState<StorybookData>(mockStorybook);
   // Message from the server (e.g. "Need at least 2 players"), shown as a banner.
   const [error, setError] = useState("");
   // The live connection. null in mock mode.
@@ -206,6 +211,10 @@ export default function HostPage() {
       setShame(data);
       show("shame");
     });
+    s.on("storybook", ({ story }) => {
+      setStory(story);
+      show("story");
+    });
     s.on("error", ({ message }) => setError(message));
     // Keep the connection so the buttons below can send events.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -248,17 +257,19 @@ export default function HostPage() {
   }, []);
 
   // ---------- Header and footer text ----------
-  const inGame = phase !== "lobby" && phase !== "shame";
+  const inGame = phase !== "lobby" && phase !== "shame" && phase !== "story";
   const context =
     phase === "lobby"
       ? `${TOTAL_ROUNDS} rounds · everyone describes once per round`
-      : phase === "shame"
-        ? "The night in review"
-        : phase === "podium"
-          ? "Final results"
-          : progress.turn > 0
-            ? `Round ${progress.round} / ${progress.totalRounds} · Turn ${progress.turn} / ${progress.turnsInRound}${progress.multiplier > 1 ? ` · x${progress.multiplier}` : ""}`
-            : `Round ${progress.round} / ${progress.totalRounds}`;
+      : phase === "story"
+        ? "The storybook"
+        : phase === "shame"
+          ? "The night in review"
+          : phase === "podium"
+            ? "Final results"
+            : progress.turn > 0
+              ? `Round ${progress.round} / ${progress.totalRounds} · Turn ${progress.turn} / ${progress.turnsInRound}${progress.multiplier > 1 ? ` · x${progress.multiplier}` : ""}`
+              : `Round ${progress.round} / ${progress.totalRounds}`;
   const footer = `${players.length} ${players.length === 1 ? "player" : "players"} / ${TOTAL_ROUNDS} rounds / everyone describes once per round`;
   // Everyone except the describer guesses.
   const guessers = players.filter((p) => p.id !== describer.id);
@@ -298,6 +309,7 @@ export default function HostPage() {
       {phase === "scoreboard" && <Scoreboard key={playCount} standings={standings} prevRanks={prevRanks} final={false} />}
       {phase === "podium" && <Scoreboard key={playCount} standings={standings} prevRanks={prevRanks} awards={awards} final={true} />}
       {phase === "shame" && <HallOfShame key={playCount} data={shame} />}
+      {phase === "story" && <Storybook key={playCount} story={story} url={origin ? storyUrl(origin, story.id) : ""} />}
 
       {/* Live mode: host controls, pinned to the bottom corner */}
       {socket && inGame && (phase === "reveal" || phase === "scoreboard" || phase === "podium") && (
@@ -305,8 +317,9 @@ export default function HostPage() {
           <TextButton onClick={() => socket.emit("next")}>Skip ▶</TextButton>
         </div>
       )}
-      {socket && phase === "shame" && (
-        <div className="fixed bottom-14 right-12 w-64">
+      {socket && (phase === "shame" || phase === "story") && (
+        <div className="fixed bottom-14 right-12 flex w-64 flex-col items-end gap-3">
+          {phase === "shame" && <TextButton onClick={() => socket.emit("next")}>To the storybook ▶</TextButton>}
           <Button onClick={startGame} disabled={starting}>
             {starting ? "Starting…" : "Play again →"}
           </Button>
@@ -360,6 +373,7 @@ const NEXT_TEST_PHASE: Partial<Record<Phase, Phase>> = {
   reveal: "scoreboard",
   scoreboard: "podium",
   podium: "shame",
+  shame: "story",
 };
 
 // ---------- Lobby ----------

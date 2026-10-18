@@ -71,5 +71,15 @@ export function createFakeAi(delayMs: number): Ai {
         guessScores,
       };
     },
+
+    async narrate(turns) {
+      await wait();
+      return {
+        title: "A Night of Questionable Art",
+        lines: turns.map((t) =>
+          t.transcript ? `${t.playerName} spoke, and the AI listened. Mostly.` : `${t.playerName} said nothing at all.`,
+        ),
+      };
+    },
   };
 }

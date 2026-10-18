@@ -20,7 +20,7 @@ import {
   type SubmitResult,
   type Target,
 } from "@/lib/mocks";
-import { SERVER_URL, connect, guessErrorText, joinErrorText, type GameSocket } from "@/lib/socket";
+import { SERVER_URL, connect, guessErrorText, joinErrorText, storyUrl, type GameSocket } from "@/lib/socket";
 import { Avatar, Button, Delta, Label, Panel, TextButton, type Tone } from "@/components/ui";
 import DescribeScreen from "./DescribeScreen";
 import GuessScreen from "./GuessScreen";
@@ -115,6 +115,8 @@ export default function PlayerJoin() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [standing, setStanding] = useState<MyStanding | null>(null);
   const [final, setFinal] = useState<FinalSummary | null>(null);
+  // The finished game's storybook, once the big screen opens it.
+  const [storyId, setStoryId] = useState("");
   // Why joining failed (or why the game ended), shown on the join form.
   const [joinError, setJoinError] = useState("");
   // Guessing on someone else's turn: who's describing, when guessing closes, and my locked-in guess.
@@ -270,8 +272,10 @@ export default function PlayerJoin() {
           awards: awards.filter((a) => a.playerName === myName),
         });
       }
+      setStoryId("");
       setPhase("final");
     });
+    s.on("storybook", ({ story }) => setStoryId(story.id));
     s.on("error", ({ message }) => {
       // Players only get this when the host left: the room is gone, so back to the join form.
       saveSession(null);
@@ -389,7 +393,7 @@ export default function PlayerJoin() {
     if (me && phase === "standing" && standing) return <StandingScreen standing={standing} />;
 
     // Game over.
-    if (me && phase === "final" && final) return <FinalScreen final={final} />;
+    if (me && phase === "final" && final) return <FinalScreen final={final} storyId={storyId} />;
 
     // Joined, waiting for the host (or for my turn).
     if (me) {
@@ -667,7 +671,7 @@ function StandingScreen({ standing }: { standing: MyStanding }) {
 
 // ---------- Game over ----------
 
-function FinalScreen({ final }: { final: FinalSummary }) {
+function FinalScreen({ final, storyId }: { final: FinalSummary; storyId: string }) {
   return (
     <div className="flex flex-1 flex-col justify-center gap-4 pb-10">
       <Label tone="point">Game over</Label>
@@ -695,7 +699,17 @@ function FinalScreen({ final }: { final: FinalSummary }) {
           <span className="font-display text-2xl">{award.title}</span>
         </Panel>
       ))}
-      <p className="text-[15px] text-muted">Check the big screen for the Hall of Shame.</p>
+      {storyId ? (
+        // A link, not a button: it opens the shareable storybook page, which outlives the game.
+        <a
+          href={storyUrl("", storyId)}
+          className="min-h-[54px] w-full rounded-inner border-2 border-action-edge bg-action px-4 py-3.5 text-center text-base font-bold text-text"
+        >
+          Open the storybook →
+        </a>
+      ) : (
+        <p className="text-[15px] text-muted">Check the big screen for the Hall of Shame, then the storybook.</p>
+      )}
     </div>
   );
 }

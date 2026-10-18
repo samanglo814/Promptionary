@@ -18,6 +18,7 @@ export const fastConfig: Partial<GameConfig> = {
   revealMs: 50,
   scoreboardMs: 50,
   gameOverMs: 50,
+  hallOfShameMs: 50,
   fakeAiDelayMs: 20,
 };
 

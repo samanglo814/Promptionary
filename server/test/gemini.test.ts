@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { GenerateContentParameters, GenerateContentResponse } from "@google/genai";
-import { createGeminiAi, parseGuessScores, parseJudgement, withKeyRotation, type Generate } from "../src/ai/gemini.js";
+import { createGeminiAi, parseGuessScores, parseJudgement, parseStory, withKeyRotation, type Generate } from "../src/ai/gemini.js";
 import { ImageStore } from "../src/ai/images.js";
 import { AiOutOfQuotaError, type Ai, type Sketch } from "../src/ai/index.js";
 import { cardStyle } from "../src/ai/style.js";
@@ -244,6 +244,16 @@ describe("gemini ai", () => {
     const { ai, calls } = fakeGemini({});
     assert.deepEqual(await ai.judge({ target: judgeTarget, transcript: "", guesses: [] }), { guessScores: [] });
     assert.equal(calls.length, 0);
+  });
+
+  test("parseStory needs a title and one line per turn", () => {
+    assert.deepEqual(parseStory(JSON.stringify({ title: " The Goose Incident ", lines: [" Once upon a time. ", "The end."] }), 2), {
+      title: "The Goose Incident",
+      lines: ["Once upon a time.", "The end."],
+    });
+    assert.throws(() => parseStory(JSON.stringify({ title: "Short", lines: ["Only one."] }), 2));
+    assert.throws(() => parseStory(JSON.stringify({ title: "", lines: ["a"] }), 1));
+    assert.throws(() => parseStory(JSON.stringify({ title: "Blank", lines: [" "] }), 1));
   });
 
   test("parseGuessScores clamps scores and rejects the wrong count", () => {
