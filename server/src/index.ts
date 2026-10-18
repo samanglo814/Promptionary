@@ -19,8 +19,10 @@ const vertexProject = process.env.VERTEX_PROJECT;
 const vertexLocation = process.env.VERTEX_LOCATION || "global";
 const generate = vertexProject ? vertexClient(vertexProject, vertexLocation) : apiKey ? geminiClient(apiKey) : undefined;
 const images = new ImageStore(publicUrl);
-const pollinations = (prompt: string) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN });
 const usePollinations = process.env.IMAGE_PROVIDER === "pollinations";
+// When Pollinations draws first, Gemini takes over right away instead of waiting out a rate limit.
+const pollinations = (prompt: string) =>
+  drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN, retry: !usePollinations });
 const imageModel = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
 const geminiDrawer = (prompt: string) => drawImage(generate!, imageModel, prompt);
 const ai = generate
