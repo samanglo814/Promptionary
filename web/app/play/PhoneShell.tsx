@@ -1,5 +1,5 @@
 // The frame around every phone screen: brand on the left, round and room on the right.
-// Matches the phone frames in the Drawrades Figma.
+// Matches the phone frames in the Figma design.
 
 import type { ReactNode } from "react";
 import { Brand } from "@/components/ui";

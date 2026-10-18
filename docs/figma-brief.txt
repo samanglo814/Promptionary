@@ -1,4 +1,4 @@
-LOST IN DESCRIPTION: DESIGN BRIEF (SCORING UPDATE)
+PROMPTIONARY: DESIGN BRIEF (SCORING UPDATE)
 
 THE GAME IN ONE LINE
 One player (the prompter) describes a secret image out loud without saying the banned words. The AI draws what it heard. Everyone else (spectators) types one guess at what the image is. Two rounds; everyone prompts once per round. Round 2 is worth 1.5x.

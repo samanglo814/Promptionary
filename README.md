@@ -1,4 +1,4 @@
-# 🎭 Lost in Description
+# 🎭 Promptionary
 
 **Charades, but you describe it and the AI draws what it *thought* you meant.**
 

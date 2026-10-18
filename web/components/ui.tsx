@@ -1,4 +1,4 @@
-// The small pieces every screen is built from, matching the Drawrades Figma.
+// The small pieces every screen is built from, matching the Figma design.
 // No "use client": nothing here has state. The pages that use them are client components.
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
@@ -37,12 +37,12 @@ function Sparkle({ size }: { size: number }) {
   );
 }
 
-// "✦ drawrades". size="lg" on the host, "md" on phones.
+// "✦ promptionary". size="lg" on the host, "md" on phones.
 export function Brand({ size = "md" }: { size?: "md" | "lg" }) {
   return (
     <div className="flex items-center gap-2.5">
       <Sparkle size={size === "lg" ? 28 : 21} />
-      <span className={`font-display leading-none ${size === "lg" ? "text-[34px]" : "text-[26px]"}`}>drawrades</span>
+      <span className={`font-display leading-none ${size === "lg" ? "text-[34px]" : "text-[26px]"}`}>promptionary</span>
     </div>
   );
 }

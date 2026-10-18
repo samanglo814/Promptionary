@@ -61,7 +61,7 @@ type FinalSummary = MyStanding & { prompterPoints: number; spectatorPoints: numb
 
 // Saved in the browser after joining, so a refreshed phone rejoins as the same player.
 type Session = { code: string; name: string; playerId: string };
-const SESSION_KEY = "reverse-charades-session";
+const SESSION_KEY = "promptionary-session";
 
 function loadSession(): Session | null {
   try {
