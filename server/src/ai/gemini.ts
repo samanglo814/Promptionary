@@ -9,7 +9,7 @@ import {
 import { readLocalTargetImage } from "../targets.js";
 import type { ImageStore } from "./images.js";
 import { toJpeg } from "./jpeg.js";
-import { sketchPrompt } from "./style.js";
+import { styledPrompt } from "./style.js";
 import { AiOutOfQuotaError, type Ai, type Drawing, type JudgeTarget, type Judgement, type StoryTurn } from "./index.js";
 
 // The real AI pipeline (README, "AI pipeline"): transcribe → draw → judge the drawing and the guesses.
@@ -290,10 +290,10 @@ export function parseGuessScores(json: string, count: number, field = "scores"):
   });
 }
 
-// Draws the transcript nearly verbatim, so the describer's mistakes stay in the picture, as a doodle
-// (sketchStyle) so a vague description looks vague. The judge compares content, not style.
+// Draws the transcript nearly verbatim, so the describer's mistakes stay in the picture,
+// in the same cartoon style as the target cards (cardStyle) so the comparison is fair.
 const drawPrompt = (transcript: string) =>
-  sketchPrompt(`draw exactly what the player described, nothing more, keeping their mistakes: ${transcript}`);
+  styledPrompt(`draw exactly what the player described, nothing more, keeping their mistakes: ${transcript}`);
 
 // Returns undefined when Gemini refuses. Exported so the server can use it as the fallback drawer.
 export async function drawImage(generate: Generate, model: string, prompt: string) {
@@ -334,8 +334,7 @@ async function judgeDrawingAndGuesses(
       text:
         "This is a party game: a player described image A without seeing B, and the AI drew B from their words. " +
         `For reference, image A shows: ${target.prompt}\n` +
-        "- score: 0–100, how well B matches A's subject, action, and setting. B is a quick doodle and A is a " +
-        "polished card, so ignore the difference in art style. Be honest; most rounds land 20–70.\n" +
+        "- score: 0–100, how well B matches A's subject, action, and setting. Be honest; most rounds land 20–70.\n" +
         "- what_it_got_right / what_it_got_wrong: up to 3 short phrases each (2–5 words), about the images.\n" +
         "- caption: one playful roast line, at most 15 words, about the mismatch. Tease the AI or the description, " +
         "never insult the player.\n" +
