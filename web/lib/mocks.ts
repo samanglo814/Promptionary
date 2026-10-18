@@ -61,7 +61,7 @@ export type GuessResult = {
 export type Award = { title: string; playerName: string; imageUrl: string };
 
 // The night's worst moments, for the Hall of Shame screen.
-// The server builds this from the rounds logged in Tiger Data (#23).
+// The server builds this from the rounds it keeps in memory.
 export type HallOfShame = {
   // Headline numbers for the big stat cards.
   stats: {

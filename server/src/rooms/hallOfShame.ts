@@ -1,7 +1,7 @@
 import type { HallOfShame } from "../types.js";
 
 // One finished round, kept in memory for the Hall of Shame.
-// (Tiger Data will store these too; this keeps the screen working without a database.)
+// There is no database: a room keeps its rounds for as long as it exists.
 export type RoundRecord = {
   playerName: string;
   transcript: string;
