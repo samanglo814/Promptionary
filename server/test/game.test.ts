@@ -455,7 +455,7 @@ describe("guessing", () => {
     await server.close();
   });
 
-  test("if the AI can't judge, shared words score the guesses and the description instead", async () => {
+  test("if the AI can't judge, shared words score the guesses and the description, and the drawing stays", async () => {
     const fake = createFakeAi(0);
     const broken: Ai = { ...fake, judge: async () => Promise.reject(new Error("Gemini is down")) };
     const server = await startTestServer({ ai: broken, config: { ...slowWindows, describeMs: 1_000 } });
@@ -470,7 +470,9 @@ describe("guessing", () => {
     const turn = await host.waitFor("round_result", undefined, 3_000);
     console.error = originalError;
     assert.ok(turn.guesses[0]!.accuracy > 0, "the target's own words still match its description");
-    assert.match(turn.result.caption, /ran out of ink/);
+    assert.match(turn.result.caption, /lost its glasses/);
+    assert.doesNotMatch(turn.result.imageUrl, /ran\+out\+of\+ink/, "the AI's drawing is still shown");
+    assert.ok(turn.result.imageUrl, "the AI's drawing is still shown");
     closeAll();
     await server.close();
   });

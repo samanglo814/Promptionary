@@ -575,7 +575,7 @@ export class Room {
     const drawing: Drawing =
       sketch.kind === "final"
         ? sketch.drawing
-        : { imageUrl: sketch.imageUrl, ...(judgement ?? noDrawing(target.prompt, transcript)) };
+        : { imageUrl: sketch.imageUrl, ...(judgement ?? unjudged(target.prompt, transcript)) };
     const score = drawing.refused ? 0 : clampPercent(drawing.score);
     const result: SubmitResult = { transcript, targetImageUrl: target.imageUrl, ...drawing, score };
     const accuracies = new Map(guesses.map((g, i) => [g.playerId, clampPercent(scores[i]!)]));
@@ -783,6 +783,16 @@ function noDrawing(prompt: string, transcript: string): Drawing {
     gotRight: [],
     gotWrong: [],
     caption: "The AI ran out of ink, so your words were scored instead.",
+  };
+}
+
+// The AI drew, but couldn't judge the drawing: keep the drawing on screen and score the description's words.
+function unjudged(prompt: string, transcript: string): Judgement {
+  return {
+    score: wordMatchScore(prompt, transcript),
+    gotRight: [],
+    gotWrong: [],
+    caption: "The AI drew it, then lost its glasses, so your words were scored instead.",
   };
 }
 
