@@ -266,7 +266,6 @@ Contributions are summarized from the repository's pull request and commit histo
 In progress:
 
 - Optional Auth0 sign-in for hosts (open pull request).
-- Persisting round events to Tiger Data. The Hall of Shame is currently built from rounds held in memory; the planned schema is described in the data contract.
 
 Planned:
 
