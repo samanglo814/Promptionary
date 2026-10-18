@@ -29,7 +29,7 @@ export type PollinationsOptions = {
 
 export async function drawWithPollinations(prompt: string, options: PollinationsOptions = {}) {
   const { token, fetchImage = fetch, retryDelayMs = RETRY_DELAY_MS, recent = recentDrawings, retry = true } = options;
-  const url = `${BASE_URL}${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
+  const url = `${BASE_URL}${encodeURIComponent(prompt)}?width=768&height=768&nologo=true`;
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   for (let attempt = 1; ; attempt++) {

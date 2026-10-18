@@ -290,8 +290,8 @@ export function parseGuessScores(json: string, count: number, field = "scores"):
   });
 }
 
-// Draws the transcript nearly verbatim, so the describer's mistakes stay in the picture, as a doodle
-// (sketchStyle) so a vague description looks vague. The judge compares content, not style.
+// Draws the transcript nearly verbatim, so the describer's mistakes stay in the picture, in a plain
+// cartoon (sketchStyle) so a vague description looks vague. The judge compares content, not style.
 const drawPrompt = (transcript: string) =>
   sketchPrompt(`draw exactly what the player described, nothing more, keeping their mistakes: ${transcript}`);
 
@@ -334,8 +334,8 @@ async function judgeDrawingAndGuesses(
       text:
         "This is a party game: a player described image A without seeing B, and the AI drew B from their words. " +
         `For reference, image A shows: ${target.prompt}\n` +
-        "- score: 0–100, how well B matches A's subject, action, and setting. B is a quick doodle and A is a " +
-        "polished card, so ignore the difference in art style. Be honest; most rounds land 20–70.\n" +
+        "- score: 0–100, how well B matches A's subject, action, and setting. B is a simpler cartoon than " +
+        "A, so ignore the difference in art style. Be honest; most rounds land 20–70.\n" +
         "- what_it_got_right / what_it_got_wrong: up to 3 short phrases each (2–5 words), about the images.\n" +
         "- caption: one playful roast line, at most 15 words, about the mismatch. Tease the AI or the description, " +
         "never insult the player.\n" +

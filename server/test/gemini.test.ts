@@ -124,7 +124,7 @@ describe("gemini ai", () => {
       { imageUrl: "", score: 42, gotRight: ["skateboard"], gotWrong: ["it's a cat, not a dog"], caption: "Close, if you squint." },
     );
     assert.match(String(calls[0]!.contents), /a furry barking friend on a plank/);
-    assert.ok(String(calls[0]!.contents).startsWith(sketchStyle), "drawn as a doodle");
+    assert.ok(String(calls[0]!.contents).startsWith(sketchStyle), "drawn in the live drawing style");
     assert.match(JSON.stringify(calls[1]!.contents), /"mimeType":"image\/jpeg"/);
   });
 
