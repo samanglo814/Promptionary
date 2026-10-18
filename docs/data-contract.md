@@ -105,6 +105,29 @@ type HallOfShame = {
     avgScore: number;
   }[];
 };
+
+// One page of the end-of-game storybook: one turn, told as a picture book.
+type StoryPage = {
+  round: number;             // 1-based
+  playerName: string;        // who described it
+  targetImageUrl: string;    // the secret image
+  imageUrl: string;          // what the AI drew; "" when refused
+  transcript: string;        // what they said ("" if they stayed silent)
+  score: number;             // 0–100 match
+  caption: string;           // the reveal's roast line
+  narration: string;         // the storyteller's line for this page (the caption if the AI couldn't write one)
+  bestGuess: { playerName: string; text: string } | null; // the most accurate guess, if it scored 50 or more
+  refused?: boolean;
+};
+
+// The whole game as a picture book. Kept by the server for 6 hours after the game (GET /stories/:id).
+type Storybook = {
+  id: string;
+  title: string;             // written by the AI, or "The Night the AI Tried Its Best"
+  createdAt: number;         // epoch ms
+  winner: string | null;     // null when the top spot was tied
+  pages: StoryPage[];        // one per turn, in the order played
+};
 ```
 
 **Room codes** are 4 uppercase letters (`FROG`). Players type or scan them; the web app uppercases input before sending.
@@ -120,7 +143,7 @@ lobby ─► round_start ─► intro ─► describing ─► processing ─►
               ▲            ▲                                                         │
               │            └──────────── next turn in this round ◄──────────────────┤
               └──────────────────────── round over: next round ◄────────────────────┘
-                                         last turn of the last round: game_over (podium) ─► hall_of_shame
+                                         last turn of the last round: game_over (podium) ─► hall_of_shame ─► storybook
 ```
 
 **Rounds and turns:** a game is **2 rounds**. In each round, every player describes once (one **turn** each), so a game has 2 × players turns. Round 1 goes in join order. Round 2 goes **lowest score first**, so the leader describes last (ties keep join order). Every point earned in round 2 is worth **1.5×**.
@@ -138,6 +161,7 @@ lobby ─► round_start ─► intro ─► describing ─► processing ─►
 | `scoreboard` | `Scoreboard` (ranked list) | Waiting | Waiting |
 | `game_over` | `Scoreboard` with `final` (podium) | Waiting | Waiting |
 | `hall_of_shame` | `HallOfShame` | Waiting | Waiting |
+| `storybook` | `Storybook`: cover, one page per turn, then "The End" with a QR code to the shareable page | "Open the storybook" link | "Open the storybook" link |
 
 **Timing (server-controlled):**
 
@@ -149,7 +173,8 @@ lobby ─► round_start ─► intro ─► describing ─► processing ─►
 | `processing` | as long as Gemini takes, and until guessing closes | the drawing is ready and guessing has closed, then one AI call judges both |
 | `reveal` | ~8s | timer (the reveal animation takes ~5s) or host sends `next` |
 | `scoreboard` | ~6s | timer or host sends `next` |
-| `game_over` | ~10s | timer or host sends `next`, then `hall_of_shame` (stays until the host starts again) |
+| `game_over` | ~10s | timer or host sends `next`, then `hall_of_shame` |
+| `hall_of_shame` | ~15s | timer or host sends `next`, then `storybook` (stays until the host starts again) |
 
 All of these live in [`server/src/config.ts`](../server/src/config.ts).
 
@@ -185,7 +210,8 @@ All of these live in [`server/src/config.ts`](../server/src/config.ts).
 - If a **describer disconnects** before submitting, they have 5s to rejoin (see `join`) before their turn is skipped.
 - **Dropped connections** (a locked phone, a Wi-Fi or tunnel blip) use Socket.io connection state recovery: a socket that reconnects within 2 minutes comes back with the same id (`socket.recovered` is true) and gets the events it missed, so it doesn't rejoin.
 - If the **host** closes the page, the room ends and everyone gets `error`. If the host's connection only drops, the room waits 2 minutes for it to come back first.
-- The host can send `start_game` again from `game_over` or `hall_of_shame` to **play again** (scores reset, Hall of Shame keeps the whole night). Players whose phones dropped less than 2 minutes ago stay in, and can rejoin with their `playerId`.
+- The **storybook** is written when `game_over` starts, in one AI call (a title and one narration line per turn), so it's usually ready before the Hall of Shame ends. `storybook` is sent once the phase starts and the book is ready, whichever comes later. If the AI can't write it, each page's caption is its narration and the title is a fixed one; the game never waits on it for long.
+- The host can send `start_game` again from `game_over`, `hall_of_shame` or `storybook` to **play again** (scores reset, Hall of Shame keeps the whole night). Players whose phones dropped less than 2 minutes ago stay in, and can rejoin with their `playerId`.
 
 ---
 
@@ -199,7 +225,7 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 |---|---|---|
 | `create_room` | *(none)* | Host page opens |
 | `start_game` | ack callback: `{ error: string \| null }` | Host clicks Start (needs 2+ players). The server answers through the callback (`null` = started), so the host page can tell a refusal from a click that never arrived. A refusal is also sent as `error`. |
-| `next` | *(none)* | Optional: host skips ahead from `round_start`, `reveal`, `scoreboard`, or `game_over` |
+| `next` | *(none)* | Optional: host skips ahead from `round_start`, `reveal`, `scoreboard`, `game_over`, or `hall_of_shame` |
 
 ### Player → server
 
@@ -241,6 +267,7 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 | `scoreboard` | `{ standings: Standing[] }` | `Scoreboard` with `final={false}`. |
 | `game_over` | `{ standings: Standing[], awards: Award[] }` | `Scoreboard` with `final={true}` (podium). Awards with nobody to give them to are left out. |
 | `hall_of_shame` | `{ data: HallOfShame }` | `HallOfShame` screen. |
+| `storybook` | `{ story: Storybook }` | Host plays the `Storybook` screen, ending on a QR code to `/story?id=<story.id>`. Phones show an "Open the storybook" link to the same page. |
 | `error` | `{ message: string }` | Shown as a message on the host or phone (e.g. "Need at least 2 players", or the room closed). |
 
 Notes:
@@ -282,7 +309,14 @@ Error responses have the body `{ error: string }`, a message ready to show the p
 
 A blocked image is **not** an error: return `200` with `refused: true`, `imageUrl: ""`, `score: 0`, empty `gotRight`/`gotWrong`, and a caption.
 
-**CORS:** the server must allow `CLIENT_ORIGIN` (the web app's URL) for both Socket.io and `/submit`.
+**CORS:** the server must allow `CLIENT_ORIGIN` (the web app's URL) for Socket.io, `/submit`, and `/stories/:id`.
+
+### GET /stories/:id
+
+The shareable storybook page (`/story?id=<id>` in the web app) loads the book from here, so it works on any phone after the room is gone.
+
+- **`200`:** the `Storybook` (JSON), the same object the `storybook` event sent.
+- **`404`:** `{ error: string }` for an unknown id, or a book older than 6 hours. The server keeps at most 200 books, and the 500 newest AI drawings they show.
 
 ---
 
@@ -304,7 +338,8 @@ Decided (see [Game flow](#2-game-flow)):
 - **Who gets points:** everyone. Guessing is about 40% of a perfect game.
 - **Reconnects:** a refreshed phone rejoins as the same player (`playerId` on `join`, saved by the phone).
 - **Awards:** sent with `game_over` as `awards: Award[]` (Closest Drawing, Most Wrong Masterpiece, Sharpest Guesser).
+- **Storybook:** after the Hall of Shame, the host pages through the game as a picture book, and its last page has a QR code to a shareable copy (`/story?id=`), kept for 6 hours.
 - **Storage:** no database. Rounds are kept in memory for the room's lifetime, which is all the Hall of Shame needs.
 
 Still open:
-1. **Storybook:** where it fits in the end-of-game flow and the shape of its data, to be added here before it's built.
+*(none right now)*

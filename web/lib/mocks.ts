@@ -81,6 +81,29 @@ export type HallOfShame = {
   worstWords: { word: string; avgScore: number }[];
 };
 
+// One page of the end-of-game storybook: one turn, told as a picture book.
+export type StoryPage = {
+  round: number;
+  playerName: string; // who described it
+  targetImageUrl: string; // the secret image
+  imageUrl: string; // what the AI drew; "" when refused
+  transcript: string; // what they said ("" if they stayed silent)
+  score: number; // 0–100 match
+  caption: string; // the reveal's roast line
+  narration: string; // the storyteller's line
+  bestGuess: { playerName: string; text: string } | null; // the closest guess, if anyone got close
+  refused?: boolean;
+};
+
+// The whole game as a picture book. The server keeps it for a few hours at GET /stories/:id.
+export type Storybook = {
+  id: string;
+  title: string;
+  createdAt: number; // epoch ms
+  winner: string | null; // null when the top spot was tied
+  pages: StoryPage[];
+};
+
 export const mockRoomCode = "FROG";
 
 export const mockPlayers: Player[] = [
@@ -180,3 +203,46 @@ export const mockAwards: Award[] = [
   { title: "Sharpest guesser", playerName: "Charisse", imageUrl: "" },
   { title: "Most wrong masterpiece", playerName: "Chadrick", imageUrl: "" },
 ];
+
+export const mockStorybook: Storybook = {
+  id: "mock",
+  title: "The Night the Goose Won",
+  createdAt: Date.UTC(2026, 9, 17, 23, 30),
+  winner: "Gabriel",
+  pages: [
+    {
+      round: 1,
+      playerName: "Sam",
+      targetImageUrl: "https://placehold.co/512x512/png?text=Dog+on+a+skateboard",
+      imageUrl: "https://placehold.co/512x512/png?text=AI+drew",
+      transcript: "a cat... no wait, a fluffy thing on a skateboard",
+      score: 42,
+      caption: "Bold of you to call that a cat.",
+      narration: "Sam spoke of a fluffy thing on wheels, and the AI, ever eager, drew a cat that had never once seen a dog.",
+      bestGuess: { playerName: "Jordan", text: "a dog riding a skateboard" },
+    },
+    {
+      round: 1,
+      playerName: "Priya",
+      targetImageUrl: "https://placehold.co/512x512/png?text=Goose+attack",
+      imageUrl: "",
+      transcript: "a guy getting absolutely destroyed by a goose",
+      score: 0,
+      caption: "Too spicy for the robot. Zero points, infinite respect.",
+      narration: "Priya told a tale of feathered violence so fierce that the AI covered its eyes and refused to look.",
+      bestGuess: null,
+      refused: true,
+    },
+    {
+      round: 2,
+      playerName: "Gabriel",
+      targetImageUrl: "https://placehold.co/512x512/png?text=Penguin+waiter",
+      imageUrl: "https://placehold.co/512x512/png?text=Fancy+penguin",
+      transcript: "a tuxedo bird carrying a tray of drinks at a fancy restaurant",
+      score: 91,
+      caption: "Finally, a description the AI could serve.",
+      narration: "Gabriel described a bird in a tuxedo, and for one shining moment the AI understood everything.",
+      bestGuess: { playerName: "Charisse", text: "penguin waiter" },
+    },
+  ],
+};

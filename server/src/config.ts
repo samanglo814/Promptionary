@@ -22,6 +22,10 @@ export type GameConfig = {
   revealMs: number;
   scoreboardMs: number;
   gameOverMs: number; // podium, then the Hall of Shame
+  hallOfShameMs: number; // Hall of Shame, then the storybook (which stays until the host plays again)
+  // How long a finished game's storybook can still be opened from its link, and how many are kept at most.
+  storyTtlMs: number;
+  maxStories: number;
 
   minPlayers: number;
   maxPlayers: number;
@@ -75,6 +79,9 @@ export const defaultConfig: GameConfig = {
   revealMs: 8_000,
   scoreboardMs: 6_000,
   gameOverMs: 10_000,
+  hallOfShameMs: 15_000,
+  storyTtlMs: 6 * 60 * 60_000,
+  maxStories: 200,
 
   minPlayers: 2,
   maxPlayers: 8,

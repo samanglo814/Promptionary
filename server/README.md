@@ -71,6 +71,8 @@ The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=po
 
 `npm run live:gemini` plays a few rounds against the real API and saves the drawings to `live-output/`. It spends about 6 requests of the daily allowance.
 
+**Storybook.** When the game ends, one more text-model call writes a title and one narration line per turn ([`src/story.ts`](src/story.ts)), while the podium and the Hall of Shame are on screen. If it fails, each page's caption is its narration. Finished storybooks are kept in memory for 6 hours (`storyTtlMs`) and served at `GET /stories/:id` for the shareable page; the image store keeps the newest 500 drawings so their pictures stay up too.
+
 Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Text (sent by the bots and tests, never by phones) is used as the transcript, audio gets a canned one, the score is a hash of the words, guesses score by the words they share with the target's `prompt`, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
 
 ## Layout
@@ -78,7 +80,7 @@ Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead
 ```
 src/
   index.ts          starts the server (reads .env)
-  app.ts            wires Express, Socket.io, rooms, and /submit together
+  app.ts            wires Express, Socket.io, rooms, /submit, and /stories together
   config.ts         game rules
   types.ts          shared types (copied from web/lib/mocks.ts)
   sockets.ts        socket events → Room methods
@@ -86,6 +88,7 @@ src/
   rooms/RoomStore.ts  room codes
   rooms/hallOfShame.ts
   http/submit.ts    POST /submit
+  story.ts          the end-of-game storybook and GET /stories/:id
   ai/               the AI interface, Gemini, the fake AI, and the drawn-image store
   bannedWords.ts
   targets.ts

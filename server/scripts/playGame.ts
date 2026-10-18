@@ -86,8 +86,8 @@ export async function playGame({ url, timeoutMs = 30_000, log = () => {} }: Opti
 
     await host.waitFor("players", (p) => p.players.length === bots.length);
     host.socket.emit("start_game");
-    await host.waitFor("hall_of_shame", undefined, timeoutMs);
-    for (const phone of phones) await phone.client.waitFor("hall_of_shame");
+    await host.waitFor("storybook", undefined, timeoutMs);
+    for (const phone of phones) await phone.client.waitFor("storybook", undefined, timeoutMs);
   } catch (err) {
     problems.push(String(err));
     return { problems };
@@ -248,6 +248,21 @@ export async function playGame({ url, timeoutMs = 30_000, log = () => {} }: Opti
   const shame = host.all("hall_of_shame")[0]?.data;
   expect(shame?.stats.roundsPlayed === results.length, `Hall of Shame counted ${shame?.stats.roundsPlayed} turns`);
   expect((shame?.stats.refusals ?? 0) >= 1 && (shame?.stats.bannedBuzzes ?? 0) >= 1, "Hall of Shame missed the refusal or the buzz");
+
+  // 9. The storybook tells every turn in order, and its link opens the same book.
+  const story = host.all("storybook")[0]?.story;
+  expect(story?.pages.length === results.length, `the storybook has ${story?.pages.length} pages for ${results.length} turns`);
+  expect(
+    story?.pages.every((page, i) => page.playerName === results[i]?.playerName && page.caption === results[i]?.result.caption) ?? false,
+    "storybook pages don't match the turns played",
+  );
+  expect(story?.pages.some((page) => page.refused) ?? false, "the storybook lost the refusal");
+  if (story) {
+    const res = await fetch(`${url}/stories/${story.id}`);
+    const body: unknown = res.ok ? await res.json() : undefined;
+    expect(res.ok && isDeepStrictEqual(body, story), `GET /stories/${story.id} answered ${res.status} with a different storybook`);
+    expect(checkEvent("storybook", { story: body }) === null, "GET /stories/:id doesn't match the contract");
+  }
 
   return { problems, results, standings: final };
 }

@@ -12,6 +12,7 @@ import type {
   Player,
   PrompterBreakdown,
   Standing,
+  Storybook,
   SubmitResult,
   Target,
 } from "./mocks";
@@ -52,6 +53,7 @@ type ServerEvents = {
   scoreboard: (p: { standings: Standing[] }) => void;
   game_over: (p: { standings: Standing[]; awards: Award[] }) => void;
   hall_of_shame: (p: { data: HallOfShame }) => void;
+  storybook: (p: { story: Storybook }) => void;
   error: (p: { message: string }) => void;
 };
 
@@ -88,6 +90,11 @@ export const guessErrorText: Record<GuessErrorReason, string> = {
   already_guessed: "You already locked in a guess.",
   invalid_guess: `Guesses can be 1 to ${MAX_GUESS_CHARS} characters.`,
 };
+
+// The shareable storybook page for a finished game (the QR code on the host's last page).
+export function storyUrl(origin: string, id: string) {
+  return `${origin}/story?id=${encodeURIComponent(id)}`;
+}
 
 // Opens a new connection. Each page opens one when it loads and closes it when it goes away.
 export function connect(): GameSocket {

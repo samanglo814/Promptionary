@@ -4,6 +4,7 @@ import type { GameIo, GameSocket } from "../app.js";
 import { findBannedWords } from "../bannedWords.js";
 import type { GameConfig } from "../config.js";
 import { guessPoints, maxGuessPoints, noPoints, prompterPoints, rankStandings, speedPercent } from "../scoring.js";
+import { writeStory, type StoryDraft, type StoryStore } from "../story.js";
 import { pickTarget, publicTarget, type TargetEntry } from "../targets.js";
 import type {
   Award,
@@ -13,6 +14,7 @@ import type {
   JoinErrorReason,
   Player,
   Standing,
+  Storybook,
   SubmitResult,
 } from "../types.js";
 import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
@@ -26,13 +28,16 @@ import { buildHallOfShame, type RoundRecord } from "./hallOfShame.js";
 
   lobby → round_start → intro → describing → processing → reveal → scoreboard → (next turn's intro)
                                                                    ↘ end of a round: next round_start
-                                                                   ↘ last turn of the game: game_over → hall_of_shame
+                                                                   ↘ last turn of the game: game_over → hall_of_shame → storybook
 
   While someone describes, everyone else can type one guess, until config.guessMs after the describer
   starts talking (or until everyone has guessed). The phone says when it hears the first word ("speaking");
   a /submit without it counts as the start. So a describer who hesitates doesn't cost the guessers speed.
   Once both the drawing and the guesses are in, one AI call judges them together (fewer calls, for the
   free tier), and the reveal follows.
+
+  The storybook is written (one AI call) while the podium and the Hall of Shame are on screen, and kept
+  by the StoryStore so its link works after the room is gone.
 
   If the AI can't help (down, or out of free requests), the game keeps going: drawings and guesses are
   scored by shared words instead (wordMatchScore). If it can't even transcribe, the describer gets one
@@ -48,10 +53,13 @@ export type Phase =
   | "reveal"
   | "scoreboard"
   | "game_over"
-  | "hall_of_shame";
+  | "hall_of_shame"
+  | "storybook";
 
 // Phases the host's "next" button can cut short.
-const skippable: Phase[] = ["round_start", "reveal", "scoreboard", "game_over"];
+const skippable: Phase[] = ["round_start", "reveal", "scoreboard", "game_over", "hall_of_shame"];
+// A guess this close or closer makes the storybook page.
+const STORY_GUESS_MIN = 50;
 // The AI failing this many times in one turn (e.g. out of quota) ends the turn instead of retrying again.
 const MAX_AI_FAILURES = 2;
 
@@ -86,8 +94,8 @@ type Turn = {
   result: Deferred<SubmitResult>;
 };
 
-// One finished turn of this game, for the awards.
-type TurnRecord = { playerName: string; score: number; imageUrl: string; drawn: boolean };
+// One finished turn of this game, for the awards and the storybook.
+type TurnRecord = StoryDraft & { drawn: boolean };
 
 // Thrown by submit(); the HTTP route turns it into a status code.
 export class SubmitError extends Error {
@@ -104,6 +112,7 @@ export type RoomDeps = {
   config: GameConfig;
   ai: Ai;
   targets: TargetEntry[];
+  stories: StoryStore;
 };
 
 export class Room {
@@ -119,6 +128,8 @@ export class Room {
   private describerId: string | null = null;
   private turn: Turn | null = null;
   private turnLog: TurnRecord[] = [];
+  private game = 0; // counts games played in this room, so a late storybook from the last one is dropped
+  private story: Promise<Storybook> | undefined;
   private usedTargets = new Set<string>();
   // Every turn played in this room tonight, across games, for the Hall of Shame.
   private rounds: RoundRecord[] = [];
@@ -248,7 +259,7 @@ export class Room {
 
   // Returns an error message for the host, or null if the game started.
   start(): string | null {
-    if (!["lobby", "game_over", "hall_of_shame"].includes(this.phase)) return "The game is already running.";
+    if (!["lobby", "game_over", "hall_of_shame", "storybook"].includes(this.phase)) return "The game is already running.";
 
     // Playing again: reset scores, and drop anyone who's been gone a while. Phones that only just
     // dropped (a locked screen) stay in, and rejoin as themselves when they wake up.
@@ -263,6 +274,8 @@ export class Room {
     }
 
     this.playerCount = connected;
+    this.game++;
+    this.story = undefined;
     this.turnLog = [];
     this.roundIndex = -1;
     this.nextRound();
@@ -609,7 +622,20 @@ export class Room {
     for (const g of guesses) award(this.players.get(g.playerId)!, g.points, "spectatorPoints");
 
     const drawn = described && !result.refused;
-    this.turnLog.push({ playerName: describer.name, score: result.score, imageUrl: result.imageUrl, drawn });
+    const closest = guesses.reduce<GuessResult | undefined>((top, g) => (g.accuracy > (top?.accuracy ?? STORY_GUESS_MIN - 1) ? g : top), undefined);
+    this.turnLog.push({
+      round: turn.round,
+      playerName: describer.name,
+      target: turn.target.prompt,
+      targetImageUrl: result.targetImageUrl,
+      imageUrl: result.refused ? "" : result.imageUrl,
+      transcript: result.transcript,
+      score: result.score,
+      caption: result.caption,
+      bestGuess: closest ? { playerName: closest.playerName, text: closest.text } : null,
+      ...(result.refused ? { refused: true } : {}),
+      drawn,
+    });
     this.rounds.push({
       playerName: describer.name,
       transcript: result.transcript,
@@ -636,13 +662,31 @@ export class Room {
     this.clearTurn();
     this.describerId = null;
     this.phase = "game_over";
-    this.toRoom("game_over", { standings: this.standings(), awards: this.awards() });
+    const standings = this.standings();
+    this.toRoom("game_over", { standings, awards: this.awards() });
+    // Written now, so it's ready by the time the Hall of Shame is over.
+    const winners = standings.filter((s) => s.rank === 1);
+    this.story = writeStory(this.deps.ai, this.turnLog, winners.length === 1 ? winners[0]!.name : null).then((story) => {
+      this.deps.stories.add(story);
+      return story;
+    });
     this.after(this.deps.config.gameOverMs, () => this.showHallOfShame());
   }
 
   private showHallOfShame() {
     this.phase = "hall_of_shame";
     this.toRoom("hall_of_shame", { data: buildHallOfShame(this.rounds) });
+    this.after(this.deps.config.hallOfShameMs, () => this.showStorybook());
+  }
+
+  // The last screen: stays until the host plays again. Waits for the storybook if it isn't written yet.
+  private showStorybook() {
+    this.phase = "storybook";
+    const game = this.game;
+    void this.story?.then((story) => {
+      if (this.closed || this.game !== game || this.phase !== "storybook") return;
+      this.toRoom("storybook", { story });
+    });
   }
 
   // The best and worst drawings of the game, and the best guesser. Skipped when nobody qualifies.

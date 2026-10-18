@@ -183,6 +183,39 @@ describe("game server", () => {
     await flakyServer.close();
   });
 
+  test("the host can skip the Hall of Shame to the storybook", async () => {
+    const slow = await startTestServer({ config: { ...fastConfig, describeMs: 300, hallOfShameMs: 60_000, fakeAiDelayMs: 0 } });
+    const { host, closeAll } = await setUp(slow.url, ["Sam", "Ana"]);
+    host.socket.emit("start_game");
+    await host.waitFor("hall_of_shame", undefined, 15_000);
+    host.socket.emit("next");
+    const { story } = await host.waitFor("storybook", undefined, 1_000);
+    assert.equal(story.pages.length, 4, "2 players × 2 rounds");
+    closeAll();
+    await slow.close();
+  });
+
+  test("if the AI can't narrate, the storybook uses the captions, and its link still works", async () => {
+    const fake = createFakeAi(0);
+    const mute: Ai = { ...fake, narrate: async () => Promise.reject(new Error("Gemini is down")) };
+    const muteServer = await startTestServer({ ai: mute, config: { ...fastConfig, describeMs: 300 } });
+    const { host, closeAll } = await setUp(muteServer.url, ["Sam", "Ana"]);
+
+    const originalError = console.error;
+    console.error = () => {};
+    host.socket.emit("start_game");
+    const { story } = await host.waitFor("storybook", undefined, 15_000);
+    console.error = originalError;
+    assert.ok(story.title, "a fallback title");
+    assert.ok(story.pages.length > 0 && story.pages.every((p) => p.narration === p.caption));
+
+    const res = await fetch(`${muteServer.url}/stories/${story.id}`);
+    assert.deepEqual(await res.json(), story);
+    assert.equal((await fetch(`${muteServer.url}/stories/not-a-story`)).status, 404);
+    closeAll();
+    await muteServer.close();
+  });
+
   test("when the AI is out of quota, the turn ends right away and guesses still score", async () => {
     const fake = createFakeAi(0);
     const outOfQuota = () => Promise.reject(new AiOutOfQuotaError("text-model", Date.now() + 60_000));
