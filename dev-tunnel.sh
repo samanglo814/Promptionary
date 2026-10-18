@@ -2,9 +2,11 @@
 # Runs the game with public https:// addresses, so phones can join from any network
 # and use the mic (phone browsers only allow the mic on https or localhost).
 #
-#   ./dev-tunnel.sh        (needs cloudflared: brew install cloudflared)
+#   ./dev-tunnel.sh                       random https://….trycloudflare.com addresses, no setup
+#   ./dev-tunnel.sh promptionary.design   your own domain, the same address every time
+#                                         (one-time setup: docs/custom-domain.md)
 #
-# Starts two free Cloudflare tunnels (no account needed), one for the web app and one for
+# Needs cloudflared (brew install cloudflared). Starts Cloudflare tunnels for the web app and
 # the game server, then starts both with the tunnel addresses. Ctrl+C stops everything.
 # The addresses are passed as environment variables, so your .env files aren't changed.
 set -euo pipefail
@@ -17,7 +19,7 @@ fi
 
 # Stops the tunnels and anything serving the game's ports.
 stop_all() {
-  pkill -f "cloudflared tunnel --url" 2>/dev/null || true
+  pkill -f "cloudflared tunnel" 2>/dev/null || true
   for port in 3000 4000; do
     lsof -ti :"$port" | xargs kill 2>/dev/null || true
   done
@@ -48,9 +50,31 @@ tunnel() {
   exit 1
 }
 
-echo "Starting tunnels..."
-server_url=$(tunnel 4000)
-web_url=$(tunnel 3000)
+# Your own domain: a named tunnel ("promptionary", made once in docs/custom-domain.md) serves
+# the website at the domain and the game server at api.<domain>.
+DOMAIN="${1:-${DOMAIN:-}}"
+if [ -n "$DOMAIN" ]; then
+  web_url="https://$DOMAIN"
+  server_url="https://api.$DOMAIN"
+  config="$logs/tunnel.yml"
+  cat >"$config" <<EOF
+tunnel: ${TUNNEL_NAME:-promptionary}
+ingress:
+  - hostname: $DOMAIN
+    service: http://localhost:3000
+  - hostname: api.$DOMAIN
+    service: http://localhost:4000
+  - service: http_status:404
+EOF
+  echo "Starting the tunnel for $DOMAIN..."
+  cloudflared tunnel --protocol http2 --config "$config" run >"$logs/tunnel.log" 2>&1 &
+  # Next.js only serves dev pages to addresses it knows (next.config.ts reads this).
+  export TUNNEL_DOMAIN="$DOMAIN"
+else
+  echo "Starting tunnels..."
+  server_url=$(tunnel 4000)
+  web_url=$(tunnel 3000)
+fi
 
 # npm start, not npm run dev: the dev server restarts on every file save, which ends every game in progress.
 (cd server && PUBLIC_URL="$server_url" CLIENT_ORIGIN="http://localhost:3000,$web_url" npm start) &
