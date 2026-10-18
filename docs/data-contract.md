@@ -2,7 +2,7 @@
 
 Everything the server and the web app send each other. **Both sides build to this file.** If something needs to change, change it here first (in a PR), then in code.
 
-- Frontend types live in [`web/lib/mocks.ts`](../web/lib/mocks.ts). The shapes below are copied from there.
+- Types live in [`web/lib/mocks.ts`](../web/lib/mocks.ts) (web) and [`server/src/types.ts`](../server/src/types.ts) (server, where the socket events are typed too). The shapes below match both; change all three in the same PR.
 - Realtime messages use **Socket.io**. Describing a round uses one **HTTP** call: `POST /submit`.
 - All field names are **camelCase**. The server converts Gemini's snake_case JSON (`what_it_got_right`, etc.) before sending anything.
 - Times are **epoch milliseconds** (`Date.now()`), so every screen can count down to the same moment.
@@ -15,9 +15,8 @@ Everything the server and the web app send each other. **Both sides build to thi
 2. [Game flow](#2-game-flow)
 3. [Socket events](#3-socket-events)
 4. [POST /submit](#4-post-submit)
-5. [Tiger Data](#5-tiger-data)
-6. [Environment variables](#6-environment-variables)
-7. [Open questions](#7-open-questions)
+5. [Environment variables](#5-environment-variables)
+6. [Open questions](#6-open-questions)
 
 ---
 
@@ -87,7 +86,7 @@ type Award = {
   imageUrl: string;   // the AI drawing, or "" for awards without a picture
 };
 
-// The night's worst moments, built from Tiger Data.
+// The night's worst moments, built by the server from the rounds it keeps in memory.
 type HallOfShame = {
   stats: {
     roundsPlayed: number;
@@ -114,7 +113,7 @@ type HallOfShame = {
 
 ## 2. Game flow
 
-The server owns the game state (#11 `feat/server-round-state-machine`). Screens only show what the server says; they never decide on their own when to move on.
+The server owns the game state ([`server/src/rooms/Room.ts`](../server/src/rooms/Room.ts)). Screens only show what the server says; they never decide on their own when to move on.
 
 ```
 lobby ─► round_start ─► intro ─► describing ─► processing ─► reveal ─► scoreboard ─┐
@@ -212,42 +211,43 @@ Connect to `NEXT_PUBLIC_SERVER_URL` with Socket.io. Event names are **snake_case
 
 ### Server → host only
 
-| Event | Payload | Replaces in the web app |
+| Event | Payload | Notes |
 |---|---|---|
-| `room_created` | `{ code: string }` | `mockRoomCode` in `host/page.tsx` |
+| `room_created` | `{ code: string }` | The lobby shows the code and QR. |
 
 ### Server → one player only
 
-| Event | Payload | Replaces in the web app |
+| Event | Payload | Notes |
 |---|---|---|
-| `joined` | `{ player: Player, code: string }` | the `FAKE` `setMe(...)` in `PlayerJoin.join()` |
-| `join_error` | `{ reason: "room_not_found" \| "name_taken" \| "game_started" \| "room_full" \| "invalid_name" }` (`invalid_name`: blank or over 16 characters) | *(join form needs an error message)* |
-| `your_turn` | `{ target: Target, endsAt: number }` | `mockTarget` and the "Pretend it's my turn" button |
+| `joined` | `{ player: Player, code: string }` | The phone saves `player.id` for rejoining. |
+| `join_error` | `{ reason: "room_not_found" \| "name_taken" \| "game_started" \| "room_full" \| "invalid_name" }` | Shown on the join form. `invalid_name`: blank or over 16 characters. |
+| `your_turn` | `{ target: Target, endsAt: number }` | Opens `DescribeScreen` with the secret image. |
 | `guess_locked` | `{ text: string, speed: number }` | The guess was taken. `speed` is how much of its value it kept (70–100). |
 | `guess_error` | `{ reason: "not_now" \| "describer" \| "already_guessed" \| "invalid_guess" }` | `not_now`: guessing isn't open. `invalid_guess`: blank or over 60 characters. |
 
 ### Server → everyone in the room
 
-| Event | Payload | Replaces in the web app |
+| Event | Payload | Notes |
 |---|---|---|
-| `players` | `{ players: Player[] }` | the fake `setInterval` adding `mockPlayers` on `/host`. Sent on every join/leave. |
+| `players` | `{ players: Player[] }` | Sent on every join/leave. |
 | `round_start` | `{ round: number, totalRounds: number, multiplier: number, leader: Player \| null, gap: number }` | Start of each round. `leader` is null when nobody leads (round 1, or a tie for first); `gap` is their lead over second place. |
 | `turn_intro` | `{ round: number, totalRounds: number, turn: number, turnsInRound: number, multiplier: number, describer: Player }` | "Next up: Sam" before every turn. `turn` counts from 1 within the round. |
 | `describing` | `{ describer: Player, endsAt: number, guessEndsAt: number, guessClockStarted: boolean }` | Describing and guessing start. `endsAt` is the describer's deadline, `guessEndsAt` when guessing closes (at the latest). Until `guessClockStarted`, `guessEndsAt` is only a placeholder: phones show "waiting for them to start talking" instead of a countdown. Sent again if the AI fails and the describer gets more time. |
 | `guess_clock` | `{ guessEndsAt: number }` | The describer said their first word: guessing now closes at `guessEndsAt`. |
 | `guesses_locked` | `{ playerIds: string[], open: boolean }` | After every guess (who has guessed, never what), and once more with `open: false` when guessing closes. |
-| `banned_buzz` | `{ playerId: string, word: string }` | → `playBuzzer()` on the host |
-| `processing` | `{ describer: Player }` | *(host "drawing" screen not built yet)* |
-| `round_result` | `{ playerName: string, result: SubmitResult, breakdown: PrompterBreakdown, guesses: GuessResult[] }` | `mockResult` / `mockRefusedResult` on `/host`. Sent once the drawing and the guess scores are both ready. |
-| `scoreboard` | `{ standings: Standing[] }` | `mockStandings` (`final={false}`) |
-| `game_over` | `{ standings: Standing[], awards: Award[] }` | `mockStandings` (`final={true}`). Awards with nobody to give them to are left out. |
-| `hall_of_shame` | `{ data: HallOfShame }` | `mockHallOfShame` |
-| `error` | `{ message: string }` | *(generic toast, not built yet)* |
+| `banned_buzz` | `{ playerId: string, word: string }` | The host flashes the word and plays the buzzer. |
+| `processing` | `{ describer: Player }` | Host shows "The AI is drawing…". |
+| `round_result` | `{ playerName: string, result: SubmitResult, breakdown: PrompterBreakdown, guesses: GuessResult[] }` | Host plays `RevealScreen` (or the refusal card); phones show their points. Sent once the drawing and the guess scores are both ready. |
+| `scoreboard` | `{ standings: Standing[] }` | `Scoreboard` with `final={false}`. |
+| `game_over` | `{ standings: Standing[], awards: Award[] }` | `Scoreboard` with `final={true}` (podium). Awards with nobody to give them to are left out. |
+| `hall_of_shame` | `{ data: HallOfShame }` | `HallOfShame` screen. |
+| `error` | `{ message: string }` | Shown as a message on the host or phone (e.g. "Need at least 2 players", or the room closed). |
 
 Notes:
 - `standings` arrive sorted with `rank` set; the scoreboard still sorts by `rank`, so mock data works too.
+- Without `NEXT_PUBLIC_SERVER_URL`, the web app runs on the mocks in `web/lib/mocks.ts` instead of these events, for working on screens without a server.
 - The describer gets `your_turn` **and** everyone gets `describing`. Only `your_turn` contains the target image, so other phones can't peek.
-- `banned_buzz` is sent while processing the transcript (the server does the banned-word check, #12).
+- `banned_buzz` is sent while processing the transcript (the server does the banned-word check, [`server/src/bannedWords.ts`](../server/src/bannedWords.ts)).
 
 ---
 
@@ -286,43 +286,15 @@ A blocked image is **not** an error: return `200` with `refused: true`, `imageUr
 
 ---
 
-## 5. Tiger Data
+## 5. Environment variables
 
-From the README. One row per round, written by the server after scoring (#22).
+**`server/.env`** (each one is explained in [`server/.env.example`](../server/.env.example)): `PORT`, `CLIENT_ORIGIN`, `PUBLIC_URL` (the server's address as browsers see it, for target and AI image URLs; defaults to `http://localhost:PORT`), `GEMINI_API_KEY` (one or more, comma-separated), `VERTEX_PROJECT`, `VERTEX_LOCATION`, `GEMINI_TEXT_MODEL`, `GEMINI_TRANSCRIBE_MODEL`, `GEMINI_IMAGE_MODEL`, `IMAGE_PROVIDER`, `POLLINATIONS_TOKEN`
 
-```sql
-CREATE TABLE rounds (
-  time          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  room_code     TEXT NOT NULL,
-  round_index   INT NOT NULL,
-  player_id     TEXT NOT NULL,
-  target_id     TEXT NOT NULL,
-  transcript    TEXT,
-  banned_hits   INT DEFAULT 0,
-  score         INT,
-  latency_ms    INT,
-  refused       BOOLEAN DEFAULT false
-);
-SELECT create_hypertable('rounds', 'time');
-```
-
-`HallOfShame` needs two things this table doesn't have yet:
-- **`player_name`** for `worstMisses[].playerName` (or join against a players table)
-- **`image_url`** for `worstMisses[].imageUrl`
-
-Suggest adding both columns. `worstWords` can be computed from `transcript` + `score` (split into words, drop short/common words, average the score per word).
+**`web/.env`**: `NEXT_PUBLIC_SERVER_URL` (when unset, the web app uses mocks). `TUNNEL_DOMAIN` is set by `dev-tunnel.sh` when it runs with a custom domain, so Next.js dev accepts it.
 
 ---
 
-## 6. Environment variables
-
-**`server/.env`**: `PORT`, `CLIENT_ORIGIN`, `PUBLIC_URL` (the server's address as browsers see it, for AI image URLs; defaults to `http://localhost:PORT`), `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_TRANSCRIBE_MODEL`, `GEMINI_IMAGE_MODEL`, `IMAGE_PROVIDER`, `POLLINATIONS_TOKEN`, `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `DEMO_MODE`
-
-**`web/.env`**: `NEXT_PUBLIC_SERVER_URL` (when unset, the web app uses mocks), `NEXT_PUBLIC_AUTH0_DOMAIN`, `NEXT_PUBLIC_AUTH0_CLIENT_ID`, `NEXT_PUBLIC_AUTH0_AUDIENCE`
-
----
-
-## 7. Open questions
+## 6. Open questions
 
 Decide these together, then update this file.
 
@@ -331,7 +303,8 @@ Decided (see [Game flow](#2-game-flow)):
 - **Scoring:** describer points out of 1000 (accuracy, clarity, speed, −100 per banned word); guessers earn points for accuracy and speed.
 - **Who gets points:** everyone. Guessing is about 40% of a perfect game.
 - **Reconnects:** a refreshed phone rejoins as the same player (`playerId` on `join`, saved by the phone).
-- **Awards (#21):** sent with `game_over` as `awards: Award[]`.
+- **Awards:** sent with `game_over` as `awards: Award[]` (Closest Drawing, Most Wrong Masterpiece, Sharpest Guesser).
+- **Storage:** no database. Rounds are kept in memory for the room's lifetime, which is all the Hall of Shame needs.
 
 Still open:
-1. **Storybook (#37):** shape of the storybook data, to be added before the storybook page (#38) is built.
+1. **Storybook:** where it fits in the end-of-game flow and the shape of its data, to be added here before it's built.

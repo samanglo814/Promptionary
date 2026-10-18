@@ -73,10 +73,6 @@ The Gemini image model has no free tier. Without billing, set `IMAGE_PROVIDER=po
 
 Without a key, the **fake AI** ([`src/ai/fake.ts`](src/ai/fake.ts)) runs instead. Text (sent by the bots and tests, never by phones) is used as the transcript, audio gets a canned one, the score is a hash of the words, guesses score by the words they share with the target's `prompt`, and the image is a placeholder. Say **"goose"** to make it refuse. Tests and `npm run bots` always use the fake AI.
 
-## What's fake for now
-
-- **Hall of Shame** is built from rounds kept in memory, not Tiger Data yet.
-
 ## Layout
 
 ```
