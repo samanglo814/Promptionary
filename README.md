@@ -149,7 +149,7 @@ The main server settings in `server/.env` are listed below. [`server/.env.exampl
 | `GEMINI_API_KEY` | One or more Gemini keys, comma-separated |
 | `VERTEX_PROJECT`, `VERTEX_LOCATION` | Use Gemini through Vertex AI instead of AI Studio keys |
 | `GEMINI_TEXT_MODEL`, `GEMINI_TRANSCRIBE_MODEL`, `GEMINI_IMAGE_MODEL` | Model overrides |
-| `IMAGE_PROVIDER` | Set to `pollinations` to draw with Pollinations only and skip the paid Gemini image model. Empty: both draw at once, first picture wins |
+| `IMAGE_PROVIDER` | Set to `pollinations` to draw with Pollinations only and skip the paid Gemini image model. Empty: Gemini draws, Pollinations if it fails |
 | `POLLINATIONS_TOKEN` | Optional free token that raises Pollinations' rate limit |
 
 ### Run locally
