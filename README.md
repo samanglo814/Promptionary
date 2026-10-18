@@ -4,7 +4,9 @@ Promptionary is a multiplayer party game built around the gap between what you s
 
 The game runs on a shared big screen (the host) with players joining from their phones by QR code. No accounts or app installs are required.
 
-Built for an MLH hackathon, October 16–18, 2026, in the Entertainment & Creative Technology track.
+Play it at [promptionary.design](https://promptionary.design).
+
+Built at SwampHacks XII, October 16–18, 2026.
 
 ## Contents
 
@@ -16,7 +18,9 @@ Built for an MLH hackathon, October 16–18, 2026, in the Entertainment & Creati
 - [Testing](#testing)
 - [Deployment](#deployment)
 - [Project structure](#project-structure)
+- [Hackathon tracks](#hackathon-tracks)
 - [Team and contributions](#team-and-contributions)
+- [Tools and acknowledgments](#tools-and-acknowledgments)
 - [Status and roadmap](#status-and-roadmap)
 
 ## How the game works
@@ -219,11 +223,19 @@ Full instructions, including AI key setup and troubleshooting, are in [`docs/dep
 
 See [`server/README.md`](server/README.md) for more detail on the server, AI behavior, and quota handling.
 
+## Hackathon tracks
+
+- **Best Entertainment & Creative Technology Hack.** A party game that turns AI misinterpretation into the entertainment, combining voice, generated art, and live multiplayer play.
+- **Easy On the Eyes Award (Best UI/UX Design).** Every host and phone screen was designed in Figma before being built, with a consistent visual language: a flat dark stage, Lilita One and Inter type, and fixed color meanings (cyan for players, pink for the AI and penalties, lime for points, violet for the single primary action on each screen). Host screens are laid out to be readable from across a room, and phone screens change based on each player's role.
+- **MLH Prize: Best Use of Gemini API.** Gemini handles speech transcription, image generation, and a combined vision-and-text judging call that scores the drawing, rates every guess, and writes the caption as structured JSON. The pipeline is built to survive free-tier limits through key rotation, quota-aware backoff, and graceful fallbacks.
+- **MLH Prize: Best Use of Vultr.** The entire production game (website, realtime server, and HTTPS) runs on a single Vultr instance, provisioned and updated with one command via [`deploy/vultr-setup.sh`](deploy/vultr-setup.sh).
+- **MLH Prize: Best Domain Name from GoDaddy Registry.** [promptionary.design](https://promptionary.design): the name joins "prompt" and "dictionary" (and nods to Pictionary), and the `.design` extension fits a game about turning words into pictures.
+
 ## Team and contributions
 
 Contributions are summarized from the repository's pull request and commit history.
 
-**[@samanglo814](https://github.com/samanglo814)** — Frontend, product design, AI integration, and infrastructure
+**Samantha Anglo ([@samanglo814](https://github.com/samanglo814))** — Frontend, product design, AI integration, and infrastructure
 
 - Wrote the original game concept and README.
 - Built the web frontend from scratch: the Next.js scaffold and design tokens, host lobby with QR code, player join flow, microphone capture and submit helper, describe screen, reveal animation with roast captions, scoreboard and podium, Hall of Shame, refusal card, landing page, and synthesized sound effects.
@@ -243,6 +255,11 @@ Contributions are summarized from the repository's pull request and commit histo
 - Created the target image bank and later doubled it to 40 targets with a shared art style for cards and drawings.
 - Designed the two-round format with spectator guessing and the current points system, including the Figma design brief.
 - Fixed the voice loop, Play Again, and repeated microphone prompts, and moved the guess clock to start at the describer's first word.
+
+## Tools and acknowledgments
+
+- **Figma** was used to design the full interface. The scoring and screen requirements were written up as a design brief ([`docs/figma-brief.txt`](docs/figma-brief.txt)), the screens were designed in Figma, and the frontend was then restyled to match those designs.
+- **Claude Code** was used as an AI pair programmer throughout the project. Commits it authored are attributed to it in the Git history; each was directed, reviewed, and merged by a team member through a pull request.
 
 ## Status and roadmap
 
