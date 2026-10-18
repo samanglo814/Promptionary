@@ -1,170 +1,152 @@
-# 🎭 Promptionary
+# Promptionary
 
-**Charades, but you describe it and the AI draws what it *thought* you meant.**
+Promptionary is a multiplayer party game built around the gap between what you say and what an AI understands. One player sees a secret image and describes it out loud without using any of its banned words. Gemini listens to the description, draws what it heard, and scores how close the drawing came to the original. Meanwhile, everyone else races to guess what the image is.
 
-A multiplayer party game where the fun is the gap between what you said and what the AI understood. One player sees a secret image and describes it out loud (without using the banned words). Gemini listens, draws what it understood, scores the match, and roasts the result. At the end of the night, the rounds become a shareable **Storybook**.
+The game runs on a shared big screen (the host) with players joining from their phones by QR code. No accounts or app installs are required.
 
-> Built for **[Hackathon Name]** (MLH), Oct 16 to 18, 2026 · Track: **Entertainment & Creative Technology (Swamp Studios)**
+Play it at [promptionary.design](https://promptionary.design).
 
-🌐 **Play:** [promptionary.design](https://promptionary.design)  
-🎬 **Demo video:** [link]  
-📝 **Devpost:** [link]
+Built at SwampHacks XII, October 16–18, 2026.
 
----
+## Contents
 
-## ✨ How It Works
+- [How the game works](#how-the-game-works)
+- [Scoring](#scoring)
+- [Architecture](#architecture)
+- [AI pipeline](#ai-pipeline)
+- [Getting started](#getting-started)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Project structure](#project-structure)
+- [Hackathon tracks](#hackathon-tracks)
+- [Team and contributions](#team-and-contributions)
+- [Tools and acknowledgments](#tools-and-acknowledgments)
+- [Status and roadmap](#status-and-roadmap)
 
-1. **Host** opens the game on a big screen and shows a room code and QR code.
-2. **Players** join on their phones, with no account needed.
-3. On your turn, your phone shows a **secret image** and a list of **banned words**.
-4. You have 20 seconds to **describe it by voice**. Say a banned word and you get buzzed.
-5. Everyone else **types one guess** at what the image is. Right and fast earns the most.
-6. **Gemini** transcribes your description, generates an image from it, scores how close it got, and scores the guesses.
-7. The **reveal** shows the original and the AI's version side by side, with a score, a roast caption, and everyone's points.
-8. Everyone describes once per round, for **2 rounds**. Round 2 is worth **1.5×**, and the leader goes last.
-9. After the final round: the **podium** with awards, the **Hall of Shame** (the night's worst misses), and a **Storybook** recap you can share.
+## How the game works
 
-### Points
+1. The host opens `/host` on a large screen. It shows a room code and a QR code.
+2. Players (2 to 8) scan the code and join from their phones at `/play`.
+3. On each turn, one player's phone shows a target image and its banned words.
+4. That player has 20 seconds to describe the image by voice. Saying a banned word costs points.
+5. Every other player types one guess at what the image shows. The guess clock starts when the describer says their first word, and faster correct guesses earn more.
+6. The host screen plays the reveal: the original image and the AI's drawing side by side, with a match score, a short roast caption, what the AI got right and wrong, and everyone's points.
+7. Everyone describes once per round. There are two rounds. Round 2 is worth 1.5x, and the turn order is reversed by score so the leader describes last.
+8. The game ends with a podium and a Hall of Shame screen covering the night's worst misses and most-violated words. Players can start a new game from the same room.
 
-- **Describing** (up to 1000 a turn, 1500 in round 2): how close the AI's drawing is (700), how well the others guessed (200), and how fast you finished (100, if the drawing is at least 40% right). −100 for each banned word.
-- **Guessing**: accuracy × speed. A guess is worth less in bigger rooms, so guessing stays about 40% of a perfect game whatever the room size (max 400 a guess, 600 in round 2).
-- Ties go to whoever scored more in round 2, then to the better guesser. The full rules are in [`docs/data-contract.md`](docs/data-contract.md#2-game-flow).
-
-### Game flow
+If the image model refuses a description on safety grounds, the reveal shows a refusal card rather than an error. Sound effects (join, drumroll, score sting, banned-word buzzer) are synthesized in the browser, and the host can mute them.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Lobby
     Lobby --> RoundStart: host starts game
     RoundStart --> Intro: round 1, then round 2 (x1.5)
-    Intro --> Describing: player sees target, others guess
+    Intro --> Describing: describer sees target, others guess
     Describing --> Processing: audio submitted
-    Processing --> Reveal: image + score + guesses scored
+    Processing --> Reveal: drawing, score, and guesses judged
     Reveal --> Intro: next turn
     Reveal --> RoundStart: round over
     Reveal --> Podium: final turn done
     Podium --> [*]
 ```
 
----
+## Scoring
 
-## 🧱 Tech Stack
+Describer points per turn (before the round multiplier):
 
-| Layer | Tech |
+| Component | Points | Based on |
+|---|---|---|
+| Accuracy | up to 700 | How closely the AI's drawing matches the target |
+| Clarity | up to 200 | The guessers' average accuracy |
+| Speed | up to 100 | Time left on the clock, awarded only if the drawing scores at least 40% |
+| Banned words | -100 each | Each banned word spoken |
+
+Guesser points scale with both accuracy and speed. The maximum value of a single guess shrinks as the room grows, so guessing stays around 40% of a perfect game regardless of player count (capped at 400 per guess, 600 in round 2). Ties are broken by round 2 points, then by guessing points.
+
+Every timing and point value lives in [`server/src/config.ts`](server/src/config.ts), and the scoring math is in [`server/src/scoring.ts`](server/src/scoring.ts). The full rules are documented in [`docs/data-contract.md`](docs/data-contract.md#2-game-flow).
+
+## Architecture
+
+| Layer | Technology |
 |---|---|
-| Frontend | React + Tailwind (host view, player view, storybook) |
-| Realtime backend | Node.js + Socket.io |
-| AI | **Google Gemini API**: audio understanding, image generation, vision scoring, captions, storybook narration |
-| Database | **Tiger Data** (Postgres + time-series) for round events and the Hall of Shame |
-| Auth | **Auth0** (optional sign-in to save your gallery; guests join freely) |
-| Hosting | **Vultr** |
-| Domain | **GoDaddy Registry** |
-
-### Architecture
+| Frontend | Next.js 16, React 19, Tailwind CSS 4, Socket.io client, `qrcode.react` |
+| Game server | Node.js, Express 5, Socket.io, TypeScript (run with `tsx`) |
+| AI | Google Gemini via `@google/genai` (AI Studio keys or Vertex AI); Pollinations as a free image fallback |
+| Image processing | `sharp` |
+| Hosting | A single Vultr server with Caddy for HTTPS |
+| CI | GitHub Actions |
 
 ```mermaid
 flowchart LR
-    P[Player phones] -- WebSocket + audio --> S[Node server on Vultr]
-    H[Host screen] -- WebSocket --> S
-    S -- audio, prompts --> G[Gemini API]
-    G -- transcript, image, score, captions --> S
-    S -- round events --> T[(Tiger Data)]
-    T -- aggregates --> S
-    P -. optional sign-in .-> A[Auth0]
+    P[Player phones] -- Socket.io + POST /submit --> S[Game server]
+    H[Host screen] -- Socket.io --> S
+    S -- audio, images, prompts --> G[Gemini]
+    S -. free image fallback .-> PO[Pollinations]
+    G -- transcript, drawing, scores, caption --> S
 ```
 
-### AI pipeline (per round)
+The server owns all game state. Rooms, phases, timers, and scoring run in a server-side state machine ([`server/src/rooms/Room.ts`](server/src/rooms/Room.ts)), and the host and phones only render what the server broadcasts. Phase deadlines are sent as epoch timestamps so every screen counts down to the same moment. Describers who disconnect briefly (for example, a phone refresh) get a grace period to rejoin before their turn is skipped, and a host screen that drops can reconnect without closing the room.
 
-1. **Audio in:** the player's recording (WAV) goes to Gemini for the transcript.
-2. **Banned-word check:** string match on the transcript.
-3. **Image generation:** the transcript is passed nearly verbatim so the mistakes stay authentic.
-4. **Scoring:** once guessing closes, one Gemini vision call compares the original and generated images, writes a short playful roast, and scores everyone's guesses, as structured JSON. One call instead of two saves the free tier's daily requests.
-5. **Fallbacks:** if Gemini is down or out of free requests, the game keeps going: the words are scored instead of the drawing, and a turn that can't be heard at all ends with no points lost.
-6. **Storybook:** at game end, all rounds are turned into titled chapters with narration.
+The interface between the two halves is specified in [`docs/data-contract.md`](docs/data-contract.md): shared types, every socket event, the `/submit` endpoint and its status codes, and environment variables. Both sides are built against that document, and changes to it go in first.
 
-If an image is blocked by safety filters, the game shows a **refusal card** instead of an error, because "the AI refused to draw that" is also funny.
+## AI pipeline
 
----
+For each turn:
 
-## 🚀 Getting Started
+1. **Transcribe.** Phones that support in-browser speech recognition (iPhone Safari, Android Chrome) send text directly. Others record 16 kHz mono WAV, which the server sends to Gemini for transcription.
+2. **Check banned words** against the transcript.
+3. **Draw.** The transcript is passed to the image model nearly verbatim so that the describer's mistakes carry through. Every prompt is prefixed with the art style used for the target cards, so drawings and targets look alike.
+4. **Judge.** Once guessing closes, a single Gemini call compares the target and the drawing, writes the caption, and rates every guess from 0 to 100, returned as structured JSON. Combining these into one call conserves free-tier quota.
+
+The pipeline is built to keep the game running when the AI does not cooperate:
+
+- Each call has a 30-second timeout and one retry. After a rate-limit response the server stops calling that model until its quota resets.
+- `GEMINI_API_KEY` accepts several comma-separated keys and rotates to the next when one runs out.
+- If transcription fails, the describer can resend with 10 extra seconds. A second failure ends the turn with no penalty.
+- If drawing or judging fails, the turn still completes, scored by word overlap with the target's prompt.
+- If the Gemini image model is unavailable (it requires billing), Pollinations draws instead.
+- Without any key, a deterministic fake AI ([`server/src/ai/fake.ts`](server/src/ai/fake.ts)) runs, which is also what the tests use.
+
+Drawings are resized to 768px JPEGs, held in memory, and served from `GET /images/:id`.
+
+The target bank contains 40 curated scenes (for example, a penguin waiter or a yeti in a sauna) defined in [`server/data/targets.json`](server/data/targets.json), each with an image prompt, banned words, and a difficulty. The images were generated by Gemini and are committed to the repository.
+
+## Getting started
 
 ### Prerequisites
 
-- Node.js 20+
-- A [Gemini API key](https://aistudio.google.com/)
-- A Tiger Data (Postgres) connection string
-- *(Optional)* an Auth0 tenant for sign-in
+- Node.js 20 or later (CI uses 22)
+- Optional: a [Gemini API key](https://aistudio.google.com/) or a Google Cloud project with Vertex AI enabled. Without one, the fake AI is used.
+- Optional, for testing on phones: `cloudflared`
 
-### Install
+### Install and configure
 
 ```bash
-git clone [repo-url]
-cd [repo-name]
+git clone https://github.com/samanglo814/Reverse-Charades.git
+cd Reverse-Charades
 
-# server
-cd server && npm install
-
-# web
+cd server && npm install && cp .env.example .env
 cd ../web && npm install
 ```
 
-### Environment variables
-
-Copy the examples and fill them in:
-
-```bash
-cp server/.env.example server/.env
-cp web/.env.example web/.env
-```
-
-**`server/.env`**
-
-```
-PORT=4000
-CLIENT_ORIGIN=http://localhost:3000
-PUBLIC_URL=
-GEMINI_API_KEY=
-GEMINI_TEXT_MODEL=
-GEMINI_TRANSCRIBE_MODEL=
-GEMINI_IMAGE_MODEL=
-IMAGE_PROVIDER=pollinations
-DATABASE_URL=
-AUTH0_DOMAIN=
-AUTH0_AUDIENCE=
-DEMO_MODE=false
-```
-
-**`web/.env`**
+Create `web/.env` with the server address:
 
 ```
 NEXT_PUBLIC_SERVER_URL=http://localhost:4000
-NEXT_PUBLIC_AUTH0_DOMAIN=
-NEXT_PUBLIC_AUTH0_CLIENT_ID=
-NEXT_PUBLIC_AUTH0_AUDIENCE=
 ```
 
-> Model names are set by environment variable so they can be swapped without code changes. Check the Gemini docs for current model names.
+The main server settings in `server/.env` are listed below. [`server/.env.example`](server/.env.example) documents each one in detail.
 
-### Database setup
-
-Run once against your Tiger Data instance:
-
-```sql
-CREATE TABLE rounds (
-  time          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  room_code     TEXT NOT NULL,
-  round_index   INT NOT NULL,
-  player_id     TEXT NOT NULL,
-  target_id     TEXT NOT NULL,
-  transcript    TEXT,
-  banned_hits   INT DEFAULT 0,
-  score         INT,
-  latency_ms    INT,
-  refused       BOOLEAN DEFAULT false
-);
-
-SELECT create_hypertable('rounds', 'time');
-```
+| Variable | Purpose |
+|---|---|
+| `PORT` | Server port (default 4000) |
+| `CLIENT_ORIGIN` | Web app URL(s) allowed by CORS, comma-separated |
+| `PUBLIC_URL` | The server's address as browsers see it. Required once phones join, or target images will not load |
+| `GEMINI_API_KEY` | One or more Gemini keys, comma-separated |
+| `VERTEX_PROJECT`, `VERTEX_LOCATION` | Use Gemini through Vertex AI instead of AI Studio keys |
+| `GEMINI_TEXT_MODEL`, `GEMINI_TRANSCRIBE_MODEL`, `GEMINI_IMAGE_MODEL` | Model overrides |
+| `IMAGE_PROVIDER` | Set to `pollinations` to skip the paid Gemini image model |
+| `POLLINATIONS_TOKEN` | Optional free token that raises Pollinations' rate limit |
 
 ### Run locally
 
@@ -176,87 +158,120 @@ cd server && npm run dev
 cd web && npm run dev
 ```
 
-Open the host screen at `http://localhost:3000/host`, then join from a phone on the same network at `http://<your-local-ip>:3000/play`.
+Open `http://localhost:3000/host` on the main screen. Phones on the same network can join at `http://<your-lan-ip>:3000/play`, provided `PUBLIC_URL` and `NEXT_PUBLIC_SERVER_URL` point at the LAN address.
 
-To test with phones (the mic needs https), run `./dev-tunnel.sh` from the repo root instead. With your own domain, `./dev-tunnel.sh promptionary.design` serves it at that address every time (setup: [`docs/custom-domain.md`](docs/custom-domain.md)).
+Phone browsers only allow microphone access over HTTPS. To test voice on phones, run `./dev-tunnel.sh` from the repository root instead. It starts both apps behind free Cloudflare tunnels and prints a public HTTPS host address, without modifying your `.env` files.
 
-### Deploy
+To serve the game at the same address every run, `./dev-tunnel.sh promptionary.design` uses a named Cloudflare tunnel instead: the website at the domain and the game server at `api.promptionary.design`. The one-time Cloudflare setup is in [`docs/custom-domain.md`](docs/custom-domain.md).
 
-The game runs on one [Vultr](https://www.vultr.com) server, with HTTPS from Caddy. On a fresh Ubuntu server, as root:
+### Utility scripts (in `server/`)
+
+| Command | Purpose |
+|---|---|
+| `npm run generate:images` | Generate images for targets that do not have one yet (`-- <id>` to redraw one, `-- --all` for all) |
+| `npm run live:gemini` | Play a few rounds against the real Gemini API and save the drawings to `live-output/` |
+
+## Testing
+
+| Command (in `server/`) | Purpose |
+|---|---|
+| `npm test` | Unit and edge-case tests: scoring, banned words, targets, Hall of Shame, Gemini and Pollinations handling, join errors, rejoin, AI failure |
+| `npm run bots` | Plays a full five-bot game against an in-process server and validates every payload against the data contract |
+| `npm run check` | Typecheck, lint, tests, and the bot game |
+
+GitHub Actions runs `npm run check` for the server and lint plus a production build for the web app on every pull request and on pushes to `main`.
+
+## Deployment
+
+The whole game (website, game server, and HTTPS) runs on one Vultr instance. On a fresh Ubuntu 24.04 server, as root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/samanglo814/Reverse-Charades/main/deploy/vultr-setup.sh | bash
 ```
 
-Full steps, AI keys, and updating: [`docs/deploy-vultr.md`](docs/deploy-vultr.md).
+The script installs dependencies, builds both apps, configures Caddy for HTTPS, and registers `promptionary-server` and `promptionary-web` as systemd services. By default it serves the game at a free `sslip.io` address. To use a custom domain, point the domain and its `api.` subdomain at the server and run the script with `DOMAIN=yourdomain.com`. Running the same command again pulls the latest `main` and redeploys while keeping `.env`.
 
-### Generate the image bank
+Full instructions, including AI key setup and troubleshooting, are in [`docs/deploy-vultr.md`](docs/deploy-vultr.md).
 
-```bash
-cd server && npm run generate:images
-```
-
-This creates the target images used in rounds. Curate them in `server/data/targets.json` (banned words and difficulty per image).
-
-### Demo mode
-
-Set `DEMO_MODE=true` to replay cached results with no live API calls. This is useful for demos on shaky Wi-Fi or if API limits are hit.
-
----
-
-## 🗂️ Project Structure
+## Project structure
 
 ```
 .
-├── web/                  # frontend (host, player, storybook)
+├── web/                    Next.js frontend
 │   ├── app/
-│   │   ├── host/         # big-screen view
-│   │   ├── play/         # phone view
-│   │   └── storybook/    # shareable recap
-│   └── components/
-├── server/               # realtime server + AI pipeline
-│   ├── rooms/            # room state machine
-│   ├── ai/               # Gemini calls (transcribe, generate, score, caption, story)
-│   ├── db/               # Tiger Data schema + queries
-│   ├── data/             # target images + banned words
-│   └── scripts/          # image bank generation
+│   │   ├── page.tsx        landing page
+│   │   ├── host/           big-screen views: lobby, reveal, scoreboard, podium, Hall of Shame, refusal card
+│   │   └── play/           phone views: join, describe (mic), guess
+│   ├── components/         shared UI
+│   └── lib/                socket client, mic capture, submit helper, sounds, shared types
+├── server/                 game server and AI pipeline
+│   ├── src/
+│   │   ├── app.ts          wires Express, Socket.io, rooms, and /submit
+│   │   ├── config.ts       game rules
+│   │   ├── scoring.ts      points math
+│   │   ├── rooms/          room state machine, room codes, Hall of Shame
+│   │   ├── http/           POST /submit
+│   │   └── ai/             Gemini, Pollinations, fake AI, image store, art style
+│   ├── data/               targets.json and target images
+│   ├── scripts/            bot game, image generation, live Gemini test
+│   └── test/
+├── deploy/vultr-setup.sh   one-command production setup
+├── dev-tunnel.sh           HTTPS tunnels for phone testing
 └── docs/
-    └── data-contract.md  # room events + API shapes
+    ├── data-contract.md    socket events, /submit, shared types
+    ├── deploy-vultr.md     deployment guide
+    ├── custom-domain.md    named Cloudflare tunnel for promptionary.design
+    └── figma-brief.txt     design brief for the scoring UI
 ```
 
----
+See [`server/README.md`](server/README.md) for more detail on the server, AI behavior, and quota handling.
 
-## 🏆 Sponsor Tracks
+## Hackathon tracks
 
-- **Entertainment & Creative Technology (Swamp Studios):** a game, interactive media, digital art, and storytelling in one.
-- **Best Use of Gemini API:** audio in, images out, structured scoring, and long-context storytelling, all from one API.
-- **Best Use of Tiger Data:** every round is logged as time-series data, powering the live Hall of Shame.
-- **Best Use of Vultr:** the whole game (website, realtime server, HTTPS) runs on one Vultr server, set up by a single script ([`deploy/vultr-setup.sh`](deploy/vultr-setup.sh)).
-- **Best Use of Auth0:** optional sign-in to save your gallery.
-- **Best Domain Name from GoDaddy Registry:** [promptionary.design](https://promptionary.design): "prompt" + "Pictionary", on `.design` because the AI is drawing.
-- **DEV Writing Challenge:** [link to post]
+- **Best Entertainment & Creative Technology Hack.** A party game that turns AI misinterpretation into the entertainment, combining voice, generated art, and live multiplayer play.
+- **Easy On the Eyes Award (Best UI/UX Design).** Every host and phone screen was designed in Figma before being built, with a consistent visual language: a flat dark stage, Lilita One and Inter type, and fixed color meanings (cyan for players, pink for the AI and penalties, lime for points, violet for the single primary action on each screen). Host screens are laid out to be readable from across a room, and phone screens change based on each player's role.
+- **MLH Prize: Best Use of Gemini API.** Gemini handles speech transcription, image generation, and a combined vision-and-text judging call that scores the drawing, rates every guess, and writes the caption as structured JSON. The pipeline is built to survive free-tier limits through key rotation, quota-aware backoff, and graceful fallbacks.
+- **MLH Prize: Best Use of Vultr.** The entire production game (website, realtime server, and HTTPS) runs on a single Vultr instance, provisioned and updated with one command via [`deploy/vultr-setup.sh`](deploy/vultr-setup.sh).
+- **MLH Prize: Best Domain Name from GoDaddy Registry.** [promptionary.design](https://promptionary.design): the name joins "prompt" and "dictionary" (and nods to Pictionary), and the `.design` extension fits a game about turning words into pictures.
 
----
+## Team and contributions
 
-## 🧗 Challenges
+Contributions are summarized from the repository's pull request and commit history.
 
-- Keeping the reveal fast enough to feel like a game, using caching and a funny processing state
-- Choosing target images that are easy to describe *wrongly*
-- Handling image safety refusals gracefully
-- Syncing a host screen and many phones in real time
+**Samantha Anglo ([@samanglo814](https://github.com/samanglo814))** — Frontend, product design, AI integration, and infrastructure
 
-## 🔮 What's Next
+- Wrote the original game concept and README.
+- Built the web frontend from scratch: the Next.js scaffold and design tokens, host lobby with QR code, player join flow, microphone capture and submit helper, describe screen, reveal animation with roast captions, scoreboard and podium, Hall of Shame, refusal card, landing page, and synthesized sound effects.
+- Authored the data contract that defines how the frontend and server communicate.
+- Implemented the final UI from the Figma designs and one-tap guess locking.
+- Hardened the AI pipeline for the free tier: multi-key rotation, quota-aware backoff, a separate transcription model, and optional Vertex AI support.
+- Added the free Pollinations image provider and the HTTPS tunnel script for phone testing.
+- Built the one-command Vultr deployment with HTTPS.
+- Led the rename to Promptionary.
 
-- Daily challenge with a shareable result card
-- Voiced narrator for roast captions
+**Gabriel Goluch ([@GGoluch1](https://github.com/GGoluch1))** — Game server, game design, and AI pipeline
 
----
+- Built the realtime game server: the Express and Socket.io scaffold, rooms and lobby, the server-owned round state machine, the `POST /submit` endpoint, and reconnect handling.
+- Built the testing infrastructure: the automated five-bot game, unit tests, and the CI workflow.
+- Wired the host and player screens to the live server.
+- Built the core Gemini pipeline for transcription, drawing, scoring, and captions, along with the live Gemini smoke test.
+- Created the target image bank and later doubled it to 40 targets with a shared art style for cards and drawings.
+- Designed the two-round format with spectator guessing and the current points system, including the Figma design brief.
+- Fixed the voice loop, Play Again, and repeated microphone prompts, and moved the guess clock to start at the describer's first word.
 
-## 👥 Team
+## Tools and acknowledgments
 
-- **[Name A]**: frontend, design, content ([GitHub](https://github.com/))
-- **[Name B]**: backend, AI, infrastructure ([GitHub](https://github.com/))
+- **Figma** was used to design the full interface. The scoring and screen requirements were written up as a design brief ([`docs/figma-brief.txt`](docs/figma-brief.txt)), the screens were designed in Figma, and the frontend was then restyled to match those designs.
+- **Claude Code** was used as an AI pair programmer throughout the project. Commits it authored are attributed to it in the Git history; each was directed, reviewed, and merged by a team member through a pull request.
 
-## 📄 License
+## Status and roadmap
 
-[MIT](LICENSE)
+In progress:
+
+- Optional Auth0 sign-in for hosts (open pull request).
+
+Planned:
+
+- A shareable Storybook recap that turns each game's rounds into narrated chapters.
+- A daily challenge with a shareable result card.
+- A voiced narrator for the roast captions.
