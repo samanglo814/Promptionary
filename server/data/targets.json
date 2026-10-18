@@ -238,5 +238,365 @@
     "prompt": "A chicken in a crossing guard vest holding up a blank round paddle while a line of baby ducks crosses the road",
     "bannedWords": ["chicken", "crossing", "road", "duck", "stop"],
     "difficulty": 2
+  },
+  {
+    "id": "seal-ball",
+    "prompt": "A seal balancing a beach ball on its nose during a show at an aquarium, a happy crowd watching from the stands",
+    "bannedWords": ["seal", "ball", "balance", "nose", "aquarium"],
+    "difficulty": 1
+  },
+  {
+    "id": "pig-mud-spa",
+    "prompt": "A pig with cucumber slices over its eyes relaxing in a mud bath at a fancy spa, no signs anywhere",
+    "bannedWords": ["pig", "mud", "spa", "cucumber", "relax"],
+    "difficulty": 2
+  },
+  {
+    "id": "owl-library",
+    "prompt": "A wise owl librarian with glasses shushing a noisy squirrel in a quiet library, books with blank covers",
+    "bannedWords": ["owl", "library", "librarian", "book", "quiet"],
+    "difficulty": 2
+  },
+  {
+    "id": "crab-drummer",
+    "prompt": "A crab playing a plain undecorated drum kit on the beach, using its claws as drumsticks",
+    "bannedWords": ["crab", "drum", "beach", "claw", "music"],
+    "difficulty": 2
+  },
+  {
+    "id": "kangaroo-boxing",
+    "prompt": "A kangaroo in red boxing gloves punching a punching bag in a gym",
+    "bannedWords": ["kangaroo", "boxing", "gloves", "punch", "gym"],
+    "difficulty": 1
+  },
+  {
+    "id": "goldfish-bicycle",
+    "prompt": "A goldfish inside its round glass bowl riding a bicycle through a park, fins on the handlebars",
+    "bannedWords": ["fish", "goldfish", "bowl", "bicycle", "bike"],
+    "difficulty": 2
+  },
+  {
+    "id": "lion-salon",
+    "prompt": "A lion at a hair salon getting its mane curled with rollers by a nervous hairdresser",
+    "bannedWords": ["lion", "mane", "hair", "salon", "curl"],
+    "difficulty": 2
+  },
+  {
+    "id": "squirrel-snowball",
+    "prompt": "Squirrels having a snowball fight in a snowy park, hiding behind little snow forts",
+    "bannedWords": ["squirrel", "snow", "snowball", "fight", "winter"],
+    "difficulty": 2
+  },
+  {
+    "id": "cowboy-rocking-horse",
+    "prompt": "A tough cowboy riding a tiny wooden rocking horse in a child's nursery, spinning a lasso",
+    "bannedWords": ["cowboy", "horse", "rocking", "lasso", "toy"],
+    "difficulty": 3
+  },
+  {
+    "id": "pancake-ceiling",
+    "prompt": "A chef staring up at a giant pancake stuck to the kitchen ceiling after flipping it too high",
+    "bannedWords": ["chef", "pancake", "flip", "ceiling", "kitchen"],
+    "difficulty": 2
+  },
+  {
+    "id": "monkey-dj",
+    "prompt": "A monkey DJ wearing big headphones spinning records at a jungle party while animals dance",
+    "bannedWords": ["monkey", "dj", "music", "headphones", "party"],
+    "difficulty": 2
+  },
+  {
+    "id": "sheep-barber",
+    "prompt": "A shocked sheep at a barber shop after being shaved completely bald, a huge pile of wool on the floor",
+    "bannedWords": ["sheep", "wool", "barber", "shave", "haircut"],
+    "difficulty": 2
+  },
+  {
+    "id": "bat-reading",
+    "prompt": "A bat hanging upside down from a lamp, reading a book by flashlight at night",
+    "bannedWords": ["bat", "upside", "book", "read", "hang"],
+    "difficulty": 3
+  },
+  {
+    "id": "king-tiny-throne",
+    "prompt": "A huge king squeezed onto a tiny toy throne, his crown sliding off his head",
+    "bannedWords": ["king", "throne", "crown", "royal", "tiny"],
+    "difficulty": 2
+  },
+  {
+    "id": "pizza-rain",
+    "prompt": "A delivery driver on a scooter racing through a rainstorm, holding a plain cardboard pizza box above their head, no signs or writing on the box, helmet or shops",
+    "bannedWords": ["pizza", "delivery", "scooter", "rain", "box"],
+    "difficulty": 2
+  },
+  {
+    "id": "fox-fishing",
+    "prompt": "A fox in a little rowboat fishing on a calm lake and reeling in an old boot",
+    "bannedWords": ["fox", "fishing", "boat", "lake", "boot"],
+    "difficulty": 2
+  },
+  {
+    "id": "dog-yoga",
+    "prompt": "A group of dogs doing yoga on mats in a park, one dog tangled in a pretzel pose",
+    "bannedWords": ["dog", "yoga", "mat", "stretch", "puppy"],
+    "difficulty": 2
+  },
+  {
+    "id": "tiger-bubblegum",
+    "prompt": "A tiger blowing a huge pink bubblegum bubble that is about to pop",
+    "bannedWords": ["tiger", "bubble", "gum", "blow", "pop"],
+    "difficulty": 1
+  },
+  {
+    "id": "ostrich-sandbox",
+    "prompt": "An ostrich with its head buried in a playground sandbox while children stare",
+    "bannedWords": ["ostrich", "bird", "sand", "head", "playground"],
+    "difficulty": 2
+  },
+  {
+    "id": "moon-hammock",
+    "prompt": "The moon wearing a nightcap, sleeping in a hammock tied between two stars",
+    "bannedWords": ["moon", "sleep", "hammock", "night", "stars"],
+    "difficulty": 3
+  },
+  {
+    "id": "scarecrow-lifeguard",
+    "prompt": "A scarecrow working as a lifeguard at a swimming pool, blowing a whistle from a tall chair",
+    "bannedWords": ["scarecrow", "lifeguard", "pool", "swim", "whistle"],
+    "difficulty": 3
+  },
+  {
+    "id": "mummy-birthday",
+    "prompt": "A mummy at a birthday party unwrapping its own bandages like a present while guests watch",
+    "bannedWords": ["mummy", "bandage", "birthday", "party", "present"],
+    "difficulty": 3
+  },
+  {
+    "id": "jellyfish-lamp",
+    "prompt": "A glowing jellyfish used as a bedside lamp in a cozy bedroom while a child reads in bed",
+    "bannedWords": ["jellyfish", "lamp", "light", "glow", "bedroom"],
+    "difficulty": 3
+  },
+  {
+    "id": "beaver-pencils",
+    "prompt": "A beaver building a dam out of pencils across a desk in an office",
+    "bannedWords": ["beaver", "dam", "pencil", "desk", "office"],
+    "difficulty": 3
+  },
+  {
+    "id": "hedgehog-hairbrush",
+    "prompt": "A hedgehog trying to brush its spikes with a hairbrush in front of a mirror",
+    "bannedWords": ["hedgehog", "spikes", "brush", "hair", "mirror"],
+    "difficulty": 3
+  },
+  {
+    "id": "camel-snowstorm",
+    "prompt": "A camel in a scarf and earmuffs shivering in a snowstorm",
+    "bannedWords": ["camel", "snow", "cold", "scarf", "winter"],
+    "difficulty": 2
+  },
+  {
+    "id": "firefighter-cat",
+    "prompt": "A firefighter on a tall ladder rescuing a cat from a tree while the cat looks annoyed",
+    "bannedWords": ["firefighter", "fire", "ladder", "cat", "tree"],
+    "difficulty": 1
+  },
+  {
+    "id": "rabbit-magician",
+    "prompt": "A rabbit magician in a top hat pulling a tiny human out of his hat on a stage",
+    "bannedWords": ["rabbit", "bunny", "magic", "hat", "magician"],
+    "difficulty": 3
+  },
+  {
+    "id": "donut-float",
+    "prompt": "A swimmer floating in the ocean using a giant frosted donut as a life ring",
+    "bannedWords": ["donut", "doughnut", "swim", "ocean", "float"],
+    "difficulty": 2
+  },
+  {
+    "id": "sumo-tricycle",
+    "prompt": "A sumo wrestler riding a tiny tricycle down a steep hill",
+    "bannedWords": ["sumo", "wrestler", "tricycle", "bike", "hill"],
+    "difficulty": 2
+  },
+  {
+    "id": "grumpy-cloud",
+    "prompt": "A grumpy rain cloud raining on only one man at an otherwise sunny picnic",
+    "bannedWords": ["cloud", "rain", "picnic", "umbrella", "sun"],
+    "difficulty": 2
+  },
+  {
+    "id": "ant-sandwich",
+    "prompt": "An ant carrying a whole sandwich across a picnic blanket",
+    "bannedWords": ["ant", "sandwich", "picnic", "carry", "bug"],
+    "difficulty": 1
+  },
+  {
+    "id": "flamingo-skating",
+    "prompt": "A flamingo ice skating on one leg across a frozen pond",
+    "bannedWords": ["flamingo", "bird", "ice", "skate", "pink"],
+    "difficulty": 2
+  },
+  {
+    "id": "zombie-garden",
+    "prompt": "A friendly zombie gardener happily planting flowers in a graveyard, every gravestone completely blank",
+    "bannedWords": ["zombie", "garden", "flower", "plant", "grave"],
+    "difficulty": 2
+  },
+  {
+    "id": "goat-school-bus",
+    "prompt": "A goat driving a plain yellow school bus full of goats, with no words or letters anywhere on the bus",
+    "bannedWords": ["goat", "bus", "school", "drive", "driver"],
+    "difficulty": 2
+  },
+  {
+    "id": "caveman-selfie",
+    "prompt": "A caveman taking a selfie with a woolly mammoth",
+    "bannedWords": ["caveman", "selfie", "mammoth", "phone", "camera"],
+    "difficulty": 2
+  },
+  {
+    "id": "pharaoh-waterslide",
+    "prompt": "An Egyptian pharaoh in full costume sliding down a waterslide at a water park",
+    "bannedWords": ["pharaoh", "egypt", "waterslide", "slide", "water"],
+    "difficulty": 3
+  },
+  {
+    "id": "viking-barista",
+    "prompt": "A viking warrior with a horned helmet working as a barista, pouring latte art in a coffee shop, plain apron, no signs or menus with writing",
+    "bannedWords": ["viking", "barista", "coffee", "latte", "cafe"],
+    "difficulty": 3
+  },
+  {
+    "id": "parrot-news",
+    "prompt": "A parrot in a suit reading papers aloud as a TV news anchor behind a desk in a studio, cameras pointed at it; the screen behind it shows only a city skyline, and there are no letters, logos or words anywhere",
+    "bannedWords": ["parrot", "bird", "news", "tv", "anchor"],
+    "difficulty": 2
+  },
+  {
+    "id": "elephant-mouse",
+    "prompt": "A huge elephant standing on a tiny stool, terrified of a little mouse on the floor",
+    "bannedWords": ["elephant", "mouse", "scared", "stool", "afraid"],
+    "difficulty": 1
+  },
+  {
+    "id": "unicorn-traffic",
+    "prompt": "A unicorn stuck in a traffic jam, driving a convertible car and honking",
+    "bannedWords": ["unicorn", "horn", "car", "traffic", "drive"],
+    "difficulty": 2
+  },
+  {
+    "id": "pigeon-statue",
+    "prompt": "A pigeon proudly standing on top of a statue's head in a city square while other pigeons cheer",
+    "bannedWords": ["pigeon", "bird", "statue", "head", "square"],
+    "difficulty": 2
+  },
+  {
+    "id": "gorilla-painter",
+    "prompt": "A gorilla carefully painting its own portrait on an easel",
+    "bannedWords": ["gorilla", "ape", "paint", "easel", "portrait"],
+    "difficulty": 2
+  },
+  {
+    "id": "doctor-toaster",
+    "prompt": "A doctor listening to a toaster with a stethoscope during a check-up at a clinic",
+    "bannedWords": ["doctor", "stethoscope", "toaster", "checkup", "hospital"],
+    "difficulty": 3
+  },
+  {
+    "id": "cat-snorkel",
+    "prompt": "A cat wearing a snorkel and goggles inside a fish tank while the fish look annoyed",
+    "bannedWords": ["cat", "snorkel", "fish", "tank", "aquarium"],
+    "difficulty": 2
+  },
+  {
+    "id": "house-chicken-legs",
+    "prompt": "A tiny wooden cottage walking through a forest on giant chicken legs",
+    "bannedWords": ["house", "chicken", "legs", "walk", "forest"],
+    "difficulty": 3
+  },
+  {
+    "id": "clown-car",
+    "prompt": "A crowd of clowns squeezing out of a tiny car at the circus",
+    "bannedWords": ["clown", "car", "circus", "tiny", "squeeze"],
+    "difficulty": 1
+  },
+  {
+    "id": "bowling-pins",
+    "prompt": "A bowling ball rolling toward terrified bowling pins with faces, all trying to run away",
+    "bannedWords": ["bowling", "ball", "pins", "strike", "alley"],
+    "difficulty": 2
+  },
+  {
+    "id": "witch-vacuum",
+    "prompt": "A witch flying over a town at night riding a vacuum cleaner instead of a broom",
+    "bannedWords": ["witch", "vacuum", "broom", "fly", "halloween"],
+    "difficulty": 2
+  },
+  {
+    "id": "walrus-tuba",
+    "prompt": "A walrus playing a tuba in a marching band",
+    "bannedWords": ["walrus", "tuba", "band", "march", "music"],
+    "difficulty": 2
+  },
+  {
+    "id": "snow-globe",
+    "prompt": "A tiny family inside a snow globe holding on tight while a giant hand shakes it",
+    "bannedWords": ["snow", "globe", "shake", "giant", "hand"],
+    "difficulty": 3
+  },
+  {
+    "id": "fridge-party",
+    "prompt": "The food inside an open fridge throwing a dance party under the fridge light",
+    "bannedWords": ["fridge", "refrigerator", "food", "party", "dance"],
+    "difficulty": 3
+  },
+  {
+    "id": "printer-homework",
+    "prompt": "An office printer with a mouth gobbling up a child's paper sheets of schoolwork while the child cries, the paper with only scribbles, no readable words",
+    "bannedWords": ["homework", "paper", "printer", "eat", "school"],
+    "difficulty": 3
+  },
+  {
+    "id": "panda-slide",
+    "prompt": "A panda tumbling off the end of a playground slide",
+    "bannedWords": ["panda", "bear", "slide", "playground", "fall"],
+    "difficulty": 1
+  },
+  {
+    "id": "museum-skeleton",
+    "prompt": "A dinosaur skeleton in a museum coming alive at night and chasing a night guard",
+    "bannedWords": ["dinosaur", "skeleton", "museum", "bones", "guard"],
+    "difficulty": 2
+  },
+  {
+    "id": "broccoli-lumberjack",
+    "prompt": "A tiny lumberjack chopping down a giant broccoli tree in a forest of vegetables",
+    "bannedWords": ["broccoli", "vegetable", "lumberjack", "tree", "axe"],
+    "difficulty": 3
+  },
+  {
+    "id": "grandpa-breakdance",
+    "prompt": "A grandpa breakdancing on his head at a disco under a glittering disco ball",
+    "bannedWords": ["grandpa", "grandfather", "old", "dance", "disco"],
+    "difficulty": 2
+  },
+  {
+    "id": "llama-photographer",
+    "prompt": "A llama spitting at a photographer inside a zoo enclosure, no signs anywhere",
+    "bannedWords": ["llama", "alpaca", "spit", "camera", "zoo"],
+    "difficulty": 2
+  },
+  {
+    "id": "worm-hardhat",
+    "prompt": "A worm in a hard hat digging a tunnel with a tiny shovel under a garden",
+    "bannedWords": ["worm", "dig", "tunnel", "shovel", "dirt"],
+    "difficulty": 3
+  },
+  {
+    "id": "crocodile-mailbox",
+    "prompt": "A mail carrier nervously putting a letter into a mailbox that is a crocodile with its mouth open, plain uniform and bag with no writing",
+    "bannedWords": ["mail", "letter", "crocodile", "mailbox", "postman"],
+    "difficulty": 3
   }
 ]
