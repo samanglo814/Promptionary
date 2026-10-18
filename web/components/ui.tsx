@@ -37,12 +37,12 @@ function Sparkle({ size }: { size: number }) {
   );
 }
 
-// "✦ promptionary". size="lg" on the host, "md" on phones.
+// "✦ Promptionary". size="lg" on the host, "md" on phones.
 export function Brand({ size = "md" }: { size?: "md" | "lg" }) {
   return (
     <div className="flex items-center gap-2.5">
       <Sparkle size={size === "lg" ? 28 : 21} />
-      <span className={`font-display leading-none ${size === "lg" ? "text-[34px]" : "text-[26px]"}`}>promptionary</span>
+      <span className={`font-display leading-none ${size === "lg" ? "text-[34px]" : "text-[26px]"}`}>Promptionary</span>
     </div>
   );
 }
