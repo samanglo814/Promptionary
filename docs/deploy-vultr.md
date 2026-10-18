@@ -31,7 +31,7 @@ With your own domain, point it (and `api.` in front of it) at the server's IP fi
 Without keys the game runs the fake AI. Edit the settings on the server:
 
 ```bash
-nano /opt/drawrades/server/.env
+nano /opt/promptionary/server/.env
 ```
 
 Pick one:
@@ -39,14 +39,14 @@ Pick one:
 - **Free keys:** `GEMINI_API_KEY=key1,key2,...`
 - **Vertex AI** (billed to a Google Cloud project, where free-trial credits apply):
   1. In the Google Cloud console, open **IAM & Admin → Service Accounts → Create service account**, give it the **Vertex AI User** role, then **Keys → Add key → JSON**. A `.json` file downloads.
-  2. Copy it to the server from your computer: `scp ~/Downloads/<the-file>.json root@<server IP>:/opt/drawrades/server/gcp-key.json`
+  2. Copy it to the server from your computer: `scp ~/Downloads/<the-file>.json root@<server IP>:/opt/promptionary/server/gcp-key.json`
   3. In `.env`, set `VERTEX_PROJECT=<project id>` and `GEMINI_TEXT_MODEL=<model name>`.
   4. Run the setup script again (it picks up the key file).
 
 Save, then restart the game server:
 
 ```bash
-systemctl restart drawrades-server
+systemctl restart promptionary-server
 ```
 
 ## Updating
@@ -56,8 +56,8 @@ Run the same setup command again: it pulls the latest `main`, rebuilds, and rest
 ## When something's wrong
 
 ```bash
-journalctl -u drawrades-server -f   # game server logs (AI errors show up here)
-journalctl -u drawrades-web -f      # website logs
-journalctl -u caddy -f              # HTTPS certificate problems
-systemctl status drawrades-server drawrades-web caddy
+journalctl -u promptionary-server -f   # game server logs (AI errors show up here)
+journalctl -u promptionary-web -f      # website logs
+journalctl -u caddy -f                 # HTTPS certificate problems
+systemctl status promptionary-server promptionary-web caddy
 ```

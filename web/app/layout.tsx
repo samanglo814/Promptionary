@@ -21,7 +21,7 @@ const inter = Inter({
 
 // What shows in the browser tab and in link previews (when someone shares the URL).
 export const metadata: Metadata = {
-  title: "Drawrades",
+  title: "Promptionary",
   description:
     "Charades, but you describe it and the AI draws what it thought you meant. A party game for one big screen and everyone's phones.",
 };

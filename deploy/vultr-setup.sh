@@ -6,7 +6,7 @@
 #
 # Run it again any time to pull the latest code and restart. See docs/deploy-vultr.md.
 #
-# Optional settings (put them before `bash`, e.g. `... | DOMAIN=drawrades.party bash`):
+# Optional settings (put them before `bash`, e.g. `... | DOMAIN=promptionary.party bash`):
 #   DOMAIN  the website's address. Defaults to <server IP>.sslip.io, a free address that
 #           points at this server with no setup. The game server gets api.<DOMAIN>.
 #   BRANCH  which branch to run (default: main)
@@ -14,8 +14,8 @@ set -euo pipefail
 
 REPO="https://github.com/samanglo814/Reverse-Charades.git"
 BRANCH="${BRANCH:-main}"
-APP_DIR=/opt/drawrades
-APP_USER=drawrades
+APP_DIR=/opt/promptionary
+APP_USER=promptionary
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run this as root (Vultr's console logs you in as root)."
@@ -102,9 +102,9 @@ echo "==> Building the website (takes a few minutes)"
 sudo -u "$APP_USER" bash -c "cd $APP_DIR/web && npm ci --no-audit --no-fund && NEXT_PUBLIC_SERVER_URL=https://$API_DOMAIN npm run build"
 
 # ---------- Keep both running (and restart them after a reboot or crash) ----------
-cat > /etc/systemd/system/drawrades-server.service <<EOF
+cat > /etc/systemd/system/promptionary-server.service <<EOF
 [Unit]
-Description=Drawrades game server
+Description=Promptionary game server
 After=network.target
 
 [Service]
@@ -118,9 +118,9 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/drawrades-web.service <<EOF
+cat > /etc/systemd/system/promptionary-web.service <<EOF
 [Unit]
-Description=Drawrades website
+Description=Promptionary website
 After=network.target
 
 [Service]
@@ -146,13 +146,13 @@ $API_DOMAIN {
 EOF
 
 systemctl daemon-reload
-systemctl enable --now drawrades-server drawrades-web >/dev/null
-systemctl restart drawrades-server drawrades-web caddy
+systemctl enable --now promptionary-server promptionary-web >/dev/null
+systemctl restart promptionary-server promptionary-web caddy
 
 echo
 echo "==> Done. Give it a minute for the HTTPS certificates, then open:"
 echo
 echo "      https://$DOMAIN/host"
 echo
-echo "    AI settings live in $ENV_FILE. After editing it: systemctl restart drawrades-server"
-echo "    Logs: journalctl -u drawrades-server -f"
+echo "    AI settings live in $ENV_FILE. After editing it: systemctl restart promptionary-server"
+echo "    Logs: journalctl -u promptionary-server -f"

@@ -2,7 +2,7 @@
 
 @import "tailwindcss";
 
-/* Design tokens, from the Drawrades Figma. Each --color-x becomes Tailwind classes like
+/* Design tokens, from the Figma design. Each --color-x becomes Tailwind classes like
    bg-x / text-x / border-x, and --radius-x becomes rounded-x.
    One flat dark stage, three accent colors with fixed meanings:
      human (cyan)  = players and their guesses
