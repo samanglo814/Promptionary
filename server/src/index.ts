@@ -3,6 +3,7 @@ import { createGameServer } from "./app.js";
 import { createGeminiAi, drawImage, geminiClient, vertexClient } from "./ai/gemini.js";
 import { ImageStore } from "./ai/images.js";
 import { drawWithPollinations } from "./ai/pollinations.js";
+import { firstDrawing } from "./ai/race.js";
 
 const port = Number(process.env.PORT ?? 4000);
 const clientOrigin = (process.env.CLIENT_ORIGIN ?? "http://localhost:3000")
@@ -19,23 +20,26 @@ const vertexProject = process.env.VERTEX_PROJECT;
 const vertexLocation = process.env.VERTEX_LOCATION || "global";
 const generate = vertexProject ? vertexClient(vertexProject, vertexLocation) : apiKey ? geminiClient(apiKey) : undefined;
 const images = new ImageStore(publicUrl);
-const usePollinations = process.env.IMAGE_PROVIDER === "pollinations";
-// When Pollinations draws first, Gemini takes over right away instead of waiting out a rate limit.
-const pollinations = (prompt: string) =>
-  drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN, retry: !usePollinations });
+// IMAGE_PROVIDER=pollinations draws with Pollinations only (no image billing needed). Otherwise Gemini
+// and Pollinations both draw at once and the first picture back is used, so a slow or failing
+// drawer doesn't hold up the reveal.
+const pollinationsOnly = process.env.IMAGE_PROVIDER === "pollinations";
+const pollinations = (prompt: string) => drawWithPollinations(prompt, { token: process.env.POLLINATIONS_TOKEN });
 const imageModel = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
-const geminiDrawer = (prompt: string) => drawImage(generate!, imageModel, prompt);
+// Racing, a stuck Gemini call must not hold up the turn once Pollinations has failed too.
+const geminiDrawer = (prompt: string) =>
+  drawImage(
+    (params) => generate!({ ...params, config: { ...params.config, abortSignal: AbortSignal.timeout(45_000) } }),
+    imageModel,
+    prompt,
+  );
 const ai = generate
   ? createGeminiAi({
       generate,
       textModel: process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest",
       transcribeModel: process.env.GEMINI_TRANSCRIBE_MODEL || "gemini-flash-lite-latest",
       imageModel,
-      drawImage: usePollinations ? pollinations : undefined,
-      // Whichever one draws, the other takes over when it fails: Pollinations when the Gemini image
-      // model has no billing, and the Gemini image model (on Vertex AI's credits) when Pollinations is
-      // rate limiting.
-      fallbackDrawImage: usePollinations ? geminiDrawer : pollinations,
+      drawImage: pollinationsOnly ? pollinations : firstDrawing([geminiDrawer, pollinations]),
       images,
     })
   : undefined;
@@ -43,7 +47,7 @@ const ai = generate
 const server = createGameServer({ clientOrigin, ai, images, publicUrl });
 const actualPort = await server.listen(port);
 console.log(`Server listening on http://localhost:${actualPort} (web app: ${clientOrigin.join(", ")})`);
-const drawer = process.env.IMAGE_PROVIDER === "pollinations" ? "Pollinations" : "Gemini";
+const drawer = pollinationsOnly ? "Pollinations" : "Gemini and Pollinations at once";
 const via = vertexProject ? `Vertex AI, project ${vertexProject}` : "AI Studio key";
 console.log(
   generate
